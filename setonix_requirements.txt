@@ -1,0 +1,16 @@
+# Dask / Parallel processing dependencies
+dask>=2026.3.0
+distributed>=2026.3.0
+
+# Zarr / Xarray ecosystem
+xarray>=2026.4.0
+zarr>=3.2.0
+h5netcdf>=1.8.1
+h5py>=3.16.0
+
+# Core AWS / S3
+boto3>=1.42.0
+s3fs>=2026.3.0
+
+# Databricks sdk
+databricks-sdk>=0.108.0
