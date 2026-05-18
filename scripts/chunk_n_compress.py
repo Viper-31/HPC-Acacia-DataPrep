@@ -16,7 +16,7 @@ warnings.filterwarnings(
 DATASETS= load_contracts()
 STAGES= {
     "dpird": stage_spec(DATASETS, "dpird", "chunk_n_compress"),
-    "ecmwf": stage_spec(DATASETS, "dpird", "chunk_n_compress")
+    "ecmwf": stage_spec(DATASETS, "ecmwf", "chunk_n_compress")
 }
 
 def iter_inputs(spec):
@@ -33,7 +33,7 @@ def process_file(in_path, spec, in_root):
 
     try:
         with xr.open_dataset(in_path, engine="h5netcdf") as ds:
-            ds = ds.chunk(spec["chunks"])
+            ds = ds.chunk(spec["chunk_map"])
             encoding = build_netcdf_encoding(ds, spec["chunk_map"], complevel=spec["complevel"])
         
             ds.to_netcdf(
