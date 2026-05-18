@@ -2,11 +2,13 @@
 
 This repo contains Python and Bash scripts to be run on the Pawsey Setonix supercomputer to prepare DPIRD and ECMWF data before it can be virtualised by [S3-Kerchunk-Streamer](https://github.com/Viper-31/S3-Kerchunk-streamer)
 
-## !! IMPORTANT !!: Need to refactor codebase
+## NextFlow integration (future)
 
-- Instead of numbering staging and chunking sequence, seperate into jobs/ and scripts/
-- Any file reference to 01, 02.1, 02.2, within the scripts themselves need to be edited to match future filenames
-- Investigate setting up simple barebones [NextFlow: Reproducible Scientific workflows](https://www.nextflow.io/)
+Planned next steps to orchestrate the Slurm pipeline with [NextFlow: Reproducible Scientific workflows](https://www.nextflow.io/):
+
+- Define a NextFlow workflow that wraps the existing `jobs/*.sh` stages in order.
+- Add a minimal NextFlow config tuned for Setonix (queues/partitions, resource labels, and module/venv setup).
+- Document how to run the pipeline locally (dry run) vs on Setonix.
 
 ```
 HPC-Acacia-DataPrep
