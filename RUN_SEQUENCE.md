@@ -32,6 +32,6 @@ sbatch jobs/checks/check_enc_zarr.sh
 (or run manually)
 python -u scripts/checks/check_enc_zarr.py
 
-5. Optional stage-out (copy chunked NetCDF back to Acacia)
+5. Stage-out to acacia (copy chunked NetCDF back to ObjectStore)
 sbatch jobs/stage_out.sh
 Note: stage-out targets $MYSCRATCH/vz_kerchunk (not Zarr output).
