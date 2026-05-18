@@ -1,6 +1,7 @@
 # Run Sequence (Setonix)
 
 ## Prerequisites
+
 - Repository is staged under `$MYSCRATCH` so that `jobs/` and `scripts/` are directly available at `$MYSCRATCH/
 jobs` and `$MYSCRATCH/scripts`.
 - Required modules/venv match the job scripts (e.g., `python/3.11.6`, `zarr_venv`).
@@ -8,7 +9,8 @@ jobs` and `$MYSCRATCH/scripts`.
 
 ## Execution Order
 
-1) **Stage in (copy raw data into scratch)**
+1. **Stage in (copy raw data into scratch)**
+
 ```bash
 sbatch jobs/stage_in.sh
 
@@ -35,3 +37,4 @@ python -u scripts/checks/check_enc_zarr.py
 5. Stage-out to acacia (copy chunked NetCDF back to ObjectStore)
 sbatch jobs/stage_out.sh
 Note: stage-out targets $MYSCRATCH/vz_kerchunk (not Zarr output).
+```
