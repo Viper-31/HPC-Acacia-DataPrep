@@ -60,7 +60,7 @@ def build_var_encoding(ds: xr.Dataset, chunk_dict: dict, shard_dict: dict, fill_
 
 def dpird_to_zarr(dry_run: bool = False):
     if not dpird_staged_path.exists():
-        raise FileNotFoundError(f"02.1-chunk_n_compress.sh should have ran to produce: {dpird_staged_path}")
+        raise FileNotFoundError(f"chunk_n_compress.sh should have ran to produce: {dpird_staged_path}")
     
     spec= encoding_specs["dpird"]
     out_path= zarr_out_dir / ("dpird_dryrun.zarr" if dry_run else "dpird.zarr")
