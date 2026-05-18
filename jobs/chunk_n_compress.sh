@@ -13,6 +13,9 @@ module load python/3.11.6
 cd $MYSCRATCH
 source zarr_venv/bin/activate
 
+export REPO_ROOT="$MYSCRATCH"
+export PYTHONPATH="$MYSCRATCH/scripts:$PYTHONPATH"
+
 echo "Starting Chunking and Compression at $(date)"
 
 python -u scripts/chunk_n_compress.py
