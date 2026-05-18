@@ -94,3 +94,6 @@ venv.bak/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# node_modules
+node_modules/
