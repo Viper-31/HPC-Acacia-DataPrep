@@ -100,3 +100,4 @@ node_modules/
 # Databricks
 .databricks
 .databrickscfg
+.bundles/
