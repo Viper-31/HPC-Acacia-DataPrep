@@ -79,7 +79,7 @@ def ecmwf_to_zarr(dry_run: bool = False):
             ds,
             chunk_map = ECMWF_SPEC["chunk_map"],
             shard_map = ECMWF_SPEC["shard_map"],
-            fill_value = "fill_value",
+            fill_value = fill_value,
             compressors= compressors
         )
 

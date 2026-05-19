@@ -5,9 +5,16 @@ import xarray as xr
 EncodingMap= dict[str, dict[str, Any]]
 
 def resolve_fill_value(value: object, dtype: np.dtype | str) -> object:
-    if value == "nan":
-        return np.array(np.nan, dtype=dtype).item()
-    return value
+    if value == "nan" or (isinstance(value, float) and np.isnan(value)):
+        return np.dtype(dtype).type(np.nan)
+        
+    target_dtype = np.dtype(dtype)
+    
+    # Strictly prevent int/float being silently cast to string
+    if target_dtype.kind in ('U', 'S', 'O') and not isinstance(value, str):
+        raise TypeError(f"Type mismatch: dtype is {dtype} but fill_value is {type(value).__name__}")
+        
+    return target_dtype.type(value)
 
 def build_netcdf_encoding(
         ds: xr.Dataset, 
