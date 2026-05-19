@@ -4,23 +4,8 @@ import warnings
 from dask.distributed import Client, LocalCluster, as_completed
 import xarray as xr
 
-SCRATCH = Path(os.environ.get("MYSCRATCH", "/tmp"))
-data_in_dir = SCRATCH / "acacia_clean_data"
-data_out_dir = SCRATCH / "vz_kerchunk"
-
-# Encoding and Chunking Specifications
-config = {
-    "dpird": {
-        "pattern": "DPIRD/DPIRD_final_stations.nc",
-        "chunks": {'station':96,'time':13156},
-        "complevel": 5
-    },
-    "ecmwf": {
-        "pattern": "ECMWF/**/*.nc",
-        "chunks": {"time": 4, "step": 25},
-        "complevel": 5
-    }
-}
+from lib._contracts import load_contracts, stage_spec, scratch_path
+from lib.encoding import build_netcdf_encoding
 
 warnings.filterwarnings(
     "ignore",
@@ -28,31 +13,28 @@ warnings.filterwarnings(
     category=UserWarning
 )
 
-"""Builds xarray encoding dictionary for NetCDF4 zlib compression."""
-def build_var_encoding(ds, chunk_dict, complevel=5):
-    enc = {}
-    for v in ds.data_vars:
-        var_dims= ds[v].dims
-        var_chunks = tuple(chunk_dict.get(dim, ds[v].sizes[dim]) for dim in var_dims)
-        enc[v] = {
-            "zlib": True,
-            "complevel": complevel,
-            "shuffle": True,
-            "chunksizes": var_chunks
-        }
-    return enc
+DATASETS= load_contracts()
+STAGES= {
+    "dpird": stage_spec(DATASETS, "dpird", "chunk_n_compress"),
+    "ecmwf": stage_spec(DATASETS, "ecmwf", "chunk_n_compress")
+}
 
-"""Chunks and compresses a single NetCDF file."""
-def process_file(in_path, dataset_type):
-    spec = config[dataset_type]
-    rel_path = in_path.relative_to(data_in_dir)
-    out_path = data_out_dir / rel_path
+def iter_inputs(spec):
+    in_root = scratch_path(spec["input_root"])
+    files = list(in_root.glob(spec["input_pattern"]))
+    return files, in_root
+
+def process_file(in_path, spec, in_root):
+    """Chunks and compresses a single NetCDF file according to contracts/datasets.yml specs."""
+    out_root= scratch_path(spec["output_root"])
+    rel_path= in_path.relative_to(in_root)
+    out_path= out_root / rel_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         with xr.open_dataset(in_path, engine="h5netcdf") as ds:
-            ds = ds.chunk(spec["chunks"])
-            encoding = build_var_encoding(ds, spec["chunks"], complevel=spec["complevel"])
+            ds = ds.chunk(spec["chunk_map"])
+            encoding = build_netcdf_encoding(ds, spec["chunk_map"], complevel=spec["complevel"])
         
             ds.to_netcdf(
                 path=out_path,
@@ -65,9 +47,7 @@ def process_file(in_path, dataset_type):
         print(f"Error preparing {in_path}: {e}")
         return None
 
-def main():
-    data_out_dir.mkdir(parents=True, exist_ok=True)
-
+def main():  
     # Initialize Dask LocalCluster for Setonix Node (180GB/24 workers= 11.25GB per worker)
     cluster = LocalCluster(
         n_workers=24, 
@@ -78,28 +58,26 @@ def main():
     client = Client(cluster)
     print(f"Dask Dashboard available at: {client.dashboard_link}")
 
-    all_files=[]
-    all_ds_types=[]
-    
-    dpird_files = list(data_in_dir.glob(config["dpird"]["pattern"]))
-    for f in dpird_files:
-        all_files.append(f)
-        all_ds_types.append("dpird")
-        
-    ecmwf_files = list(data_in_dir.glob(config["ecmwf"]["pattern"]))
-    for f in ecmwf_files:
-        all_files.append(f)
-        all_ds_types.append("ecmwf")
+    all_files = []
+    all_specs = []
+    all_roots = []
+
+    for spec in STAGES.values():
+        files, in_root= iter_inputs(spec)
+        for f in files:
+            all_files.append(f)
+            all_specs.append(spec)
+            all_roots.append(in_root)
 
     if not all_files:
-        print("No files found to process. Check $MYSCRATCH/acacia_clean_data")
+        print("No files found to process. Check staged inputs in $MYSCRATCH")
         client.close()
         cluster.close()
         return
 
     print(f"Submitting {len(all_files)} tasks across {len(client.scheduler_info()['workers'])} workers on cluster ...")
     
-    futures= client.map(process_file,all_files,all_ds_types)
+    futures= client.map(process_file, all_files, all_specs, all_roots)
     
     for future in as_completed(futures):
         print(future.result())

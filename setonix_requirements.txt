@@ -14,3 +14,6 @@ s3fs>=2026.3.0
 
 # Databricks sdk
 databricks-sdk>=0.108.0
+
+# Runtime dependencies
+pyyaml>= 6.0.0
