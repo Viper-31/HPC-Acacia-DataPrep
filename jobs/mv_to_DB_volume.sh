@@ -13,12 +13,10 @@ module load python/3.11.6
 cd $MYSCRATCH
 source zarr_venv/bin/activate
 
-export REPO_ROOT="$MYSCRATCH"
-export PYTHONPATH="$MYSCRATCH/scripts:$PYTHONPATH"
-export DATABRIRCKS_CONFIG_FILE= "$MYSCRATCH/.databrickscfg"
-
 echo "Starting to Zarr conversion at $(date)"
 
-python -u scripts/to_zarr.py
+export MYSCRATCH="$MYSCRATCH"
+
+python -u mv_to_DB_volume.py
 
 echo "Finished at $(date)"

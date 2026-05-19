@@ -5,6 +5,5 @@ storages:
     volume: "weather-data"
     volume_target_folder: "zarr_objects"
   setonix-scratch:
-    catalog: "MYSCRATCH"
     zarr_folder: "zarr_objects"
     zarr_objects: ["dpird.zarr", "ecmwf.zarr"]
