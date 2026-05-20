@@ -14,8 +14,7 @@ def upload_single_file(w: WorkspaceClient, local_path: str, target_path: str):
         target_path,
         local_path,
         overwrite=True,
-        use_parallel=True,
-        parallelism=2 # 2 threads per file chunk for upload speed
+        use_parallel=False
     )
     return target_path
 
@@ -66,7 +65,10 @@ def main():
 
     print(f"Found {len(files_to_upload)} files to upload to {databricks_destination_folder}")
     
-    max_workers= 32
+    slurm_cpus= os.environ.get("SLURM_CPUS_PER_TASK")
+    max_workers= int(slurm_cpus) if slurm_cpus else 4
+
+    print(f"Using {max_workers} worker threads for multi-threaded file uploads ...")
     with ThreadPoolExecutor(max_workers= max_workers) as executor:
         futures= {
             executor.submit(upload_single_file, local, target): (local, target)
