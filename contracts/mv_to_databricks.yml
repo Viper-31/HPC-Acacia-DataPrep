@@ -1,0 +1,9 @@
+storages:
+  databricks-volume:
+    catalog: "workspace"
+    schema: "weather"
+    volume: "weather-data"
+    volume_target_folder: "zarr_objects"
+  setonix-scratch:
+    zarr_folder: "zarr_objects"
+    zarr_objects: ["dpird.zarr", "ecmwf.zarr"]
