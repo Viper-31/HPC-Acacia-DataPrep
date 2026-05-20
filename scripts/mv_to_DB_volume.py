@@ -2,7 +2,7 @@ import os
 import yaml
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from databricks.sdk import WorkSpaceClient
+from databricks.sdk import WorkspaceClient
 
 def yaml_load(path: Path):
     with open(path, "r") as f:
@@ -41,7 +41,7 @@ def main():
     setonix_zarr_object_path = Path(myscratch_env) / zarr_folder
 
     # Initialise Databricks Workspace client
-    w = WorkSpaceClient()
+    w = WorkspaceClient()
       
     w.files.create_directory(databricks_destination_folder)
 
@@ -71,7 +71,7 @@ def main():
     print(f"Using {max_workers} worker threads for multi-threaded file uploads ...")
     with ThreadPoolExecutor(max_workers= max_workers) as executor:
         futures= {
-            executor.submit(upload_single_file, local, target): (local, target)
+            executor.submit(upload_single_file, w, local, target): (local, target)
             for local, target in files_to_upload
         }
 
