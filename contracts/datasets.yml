@@ -5,7 +5,8 @@ datasets:
         input_root: "acacia_clean_data"
         input_pattern: "DPIRD/DPIRD_final_stations.nc"
         output_root: "vz_kerchunk"
-        chunk_map: { station: 96, time: 52624}
+        output_path: "DPIRD/dpird_wa_stations.nc"
+        chunk_map: { station: 96, time: 52624 }
         complevel: 5
       to_zarr:
         input_root: "vz_kerchunk"
@@ -20,9 +21,15 @@ datasets:
     stages:
       chunk_n_compress:
         input_root: "acacia_clean_data"
-        input_pattern: "ECMWF/**/*.nc"
         output_root: "vz_kerchunk"
-        chunk_map: { time: 4, step: 113, latitude: 111, longitude: 151 } # Introduce mfdataset()
+        years:
+          - year: 2024
+            input_pattern: "ECMWF/2024/**/*.nc"
+            output_path: "ECMWF/2024/ecmwf_op.nc"
+          - year: 2025
+            input_pattern: "ECMWF/2025/**/*.nc"
+            output_path: "ECMWF/2025/ecmwf_op.nc"
+        chunk_map: { time: 4 }
         complevel: 5
       to_zarr:
         input_root: "acacia_clean_data"
