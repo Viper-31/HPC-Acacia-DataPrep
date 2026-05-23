@@ -11,6 +11,7 @@ dependencies = [
     "distributed>=2026.3.0",
     "h5netcdf>=1.8.1",
     "h5py>=3.16.0",
+    "hdf5plugin>=6.0.0",
     "pyyaml>=6.0.0",
     "s3fs>=2026.3.0",
     "xarray>=2026.4.0",
