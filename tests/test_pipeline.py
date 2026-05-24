@@ -37,6 +37,17 @@ def test_sorted_ecmwf_input_files_raises_when_no_files_match(tmp_path):
         sorted_ecmwf_input_files(tmp_path, "ECMWF/2024/**/*.nc", "ECMWF 2024")
 
 
+def test_sorted_ecmwf_input_files_returns_sorted_valid_glob_matches(tmp_path):
+    root = tmp_path / "acacia_clean_data"
+    later = _touch(root / "ECMWF/2024/02/13.nc")
+    earlier = _touch(root / "ECMWF/2024/02/06.nc")
+
+    assert sorted_ecmwf_input_files(root, "ECMWF/2024/**/*.nc", "ECMWF 2024") == [
+        earlier,
+        later,
+    ]
+
+
 def test_sort_and_validate_ecmwf_paths_rejects_invalid_path_shape(tmp_path):
     root = tmp_path / "acacia_clean_data"
     invalid = _touch(root / "ECMWF/2024/2/06.nc")
@@ -51,6 +62,19 @@ def test_sort_and_validate_ecmwf_paths_rejects_duplicate_dates(tmp_path):
 
     with pytest.raises(ValueError, match="Duplicate ECMWF input date"):
         sort_and_validate_ecmwf_paths([path, path], root, "ECMWF 2024")
+
+
+def test_sort_and_validate_ecmwf_paths_rejects_empty_input_list(tmp_path):
+    with pytest.raises(FileNotFoundError, match="No ECMWF input files provided"):
+        sort_and_validate_ecmwf_paths([], tmp_path, "ECMWF 2024")
+
+
+def test_sort_and_validate_ecmwf_paths_rejects_path_outside_input_root(tmp_path):
+    root = tmp_path / "acacia_clean_data"
+    outside = _touch(tmp_path / "elsewhere/ECMWF/2024/02/06.nc")
+
+    with pytest.raises(ValueError, match="Invalid ECMWF input path"):
+        sort_and_validate_ecmwf_paths([outside], root, "ECMWF 2024")
 
 
 @pytest.mark.integration
@@ -106,7 +130,26 @@ def test_write_netcdf_atomic_replaces_existing_output_after_success(tmp_path):
     assert out_path.stat().st_size > len("old failed output")
     assert not (tmp_path / ".ecmwf_op.nc.tmp").exists()
 
- 
+
+@pytest.mark.integration
+def test_write_netcdf_atomic_removes_stale_temp_before_writing(tmp_path, monkeypatch):
+    ds = xr.Dataset({"t2m": ("time", np.array([1.0, 2.0]))})
+    out_path = tmp_path / "ecmwf_op.nc"
+    tmp_path_nc = tmp_path / ".ecmwf_op.nc.tmp"
+    tmp_path_nc.write_text("stale temp", encoding="utf-8")
+
+    def write_replacement(self, path, *args, **kwargs):
+        assert not Path(path).exists()
+        Path(path).write_text("new complete output", encoding="utf-8")
+
+    monkeypatch.setattr(xr.Dataset, "to_netcdf", write_replacement)
+
+    write_netcdf_atomic(ds, out_path, encoding={})
+
+    assert out_path.read_text(encoding="utf-8") == "new complete output"
+    assert not tmp_path_nc.exists()
+
+
 @pytest.mark.integration
 def test_write_netcdf_atomic_removes_temp_and_keeps_existing_output_on_failure(
     tmp_path,
