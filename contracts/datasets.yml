@@ -5,7 +5,7 @@ datasets:
         input_root: "acacia_clean_data"
         input_pattern: "DPIRD/DPIRD_final_stations.nc"
         output_root: "vz_kerchunk"
-        output_path: "DPIRD/dpird_wa_stations.nc"
+        output_pattern: "DPIRD/dpird_wa_stations.nc"
         chunk_map: { station: 96, time: 52624 }
         complevel: 5
       to_zarr:
