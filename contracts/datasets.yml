@@ -9,7 +9,7 @@ datasets:
         chunk_map: { station: 96, time: 52624 }
         complevel: 5
       to_zarr:
-        input_root: "vz_kerchunk"
+        input_root: "acacia_clean_data"
         input_pattern: "DPIRD/DPIRD_final_stations.nc"
         output_root: "zarr_objects"
         chunk_map: { station: 192, time: 26312 }

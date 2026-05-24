@@ -5,7 +5,7 @@ import os
 
 # Adjust import path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../scripts')))
-from lib.encoding import resolve_fill_value
+from scripts.lib.encoding import resolve_fill_value
 
 def test_resolve_fill_value_nan_float32():
     val = resolve_fill_value("nan", "float32")
