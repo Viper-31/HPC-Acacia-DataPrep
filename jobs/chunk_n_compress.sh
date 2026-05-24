@@ -3,9 +3,9 @@
 #SBATCH --partition=work
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=64
 #SBATCH --mem=200G
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=chunk_compress_%j.log
 #SBATCH --error=chunk_compress_%j.err
 
