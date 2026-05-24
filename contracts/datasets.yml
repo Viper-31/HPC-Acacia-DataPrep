@@ -25,10 +25,10 @@ datasets:
         years:
           - year: 2024
             input_pattern: "ECMWF/2024/**/*.nc"
-            output_path: "ECMWF/2024/ecmwf_op.nc"
+            output_pattern: "ECMWF/2024/ecmwf_op.nc"
           - year: 2025
             input_pattern: "ECMWF/2025/**/*.nc"
-            output_path: "ECMWF/2025/ecmwf_op.nc"
+            output_pattern: "ECMWF/2025/ecmwf_op.nc"
         chunk_map: { time: 4 }
         complevel: 5
       to_zarr:
