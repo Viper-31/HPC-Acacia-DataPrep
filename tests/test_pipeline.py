@@ -7,7 +7,7 @@ import pytest
 import xarray as xr
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from scripts.lib.pipeline import (
+from scripts.lib.mfdataset_pipeline import (
     sort_and_validate_ecmwf_paths,
     sorted_ecmwf_input_files,
     validate_unique_ascending_time,
