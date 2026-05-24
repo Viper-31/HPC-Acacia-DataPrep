@@ -3,7 +3,7 @@
 #SBATCH --partition=work
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=24
 #SBATCH --mem=200G
 #SBATCH --time=04:00:00
 #SBATCH --output=chunk_compress_%j.log
@@ -13,8 +13,8 @@ module load python/3.11.6
 cd $MYSCRATCH
 source zarr_venv/bin/activate
 
-export REPO_ROOT="$MYSCRATCH"
-export PYTHONPATH="$MYSCRATCH/scripts:$PYTHONPATH"
+export NUM_OF_CORES="${SLURM_CPUS_PER_TASK}"
+export MEMORY_LIMIT="200GB"
 
 echo "Starting Chunking and Compression at $(date)"
 

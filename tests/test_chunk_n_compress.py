@@ -178,6 +178,25 @@ def test_main_writes_dpird_then_ecmwf_years_in_sorted_order(tmp_path, monkeypatc
     module = _import_chunk_n_compress(tmp_path, monkeypatch)
     calls = []
 
+    class FakeCluster:
+        def __init__(self, **kwargs):
+            calls.append(("cluster", kwargs))
+
+        def close(self):
+            calls.append("cluster_close")
+
+    class FakeClient:
+        def __init__(self, cluster):
+            calls.append(("client", cluster.__class__.__name__))
+            self.dashboard_link = "http://localhost:8787/status"
+
+        def close(self):
+            calls.append("client_close")
+
+    monkeypatch.setattr(module, "LocalCluster", FakeCluster)
+    monkeypatch.setattr(module, "Client", FakeClient)
+    monkeypatch.setattr(module, "_runtime_cluster_config", lambda: (4, "8.00GB"))
+
     monkeypatch.setattr(module, "write_dpird", lambda: calls.append("dpird"))
     monkeypatch.setattr(
         module,
@@ -187,4 +206,52 @@ def test_main_writes_dpird_then_ecmwf_years_in_sorted_order(tmp_path, monkeypatc
 
     module.main()
 
-    assert calls == ["dpird", 2024, 2025]
+    assert calls == [
+        ("cluster", {
+            "n_workers": 4,
+            "threads_per_worker": 1,
+            "processes": True,
+            "memory_limit": "8.00GB",
+            "dashboard_address": ":8787",
+        }),
+        ("client", "FakeCluster"),
+        "dpird",
+        2024,
+        2025,
+        "client_close",
+        "cluster_close",
+    ]
+
+
+def test_runtime_cluster_config_raises_when_workers_missing(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    monkeypatch.delenv("NUM_OF_CORES", raising=False)
+    monkeypatch.delenv("WORKERS", raising=False)
+    monkeypatch.delenv("SLURM_CPUS_PER_TASK", raising=False)
+
+    with pytest.raises(RuntimeError, match="NUM_OF_CORES/WORKERS"):
+        module._runtime_cluster_config()
+
+
+def test_runtime_cluster_config_uses_explicit_memory_limit(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    monkeypatch.setenv("NUM_OF_CORES", "8")
+    monkeypatch.setenv("MEMORY_LIMIT", "160GB")
+    monkeypatch.delenv("SLURM_MEM_PER_NODE", raising=False)
+    monkeypatch.delenv("SLURM_MEM_PER_CPU", raising=False)
+
+    workers, mem = module._runtime_cluster_config()
+
+    assert workers == 8
+    assert mem == "20.00GB"
+
+
+def test_runtime_cluster_config_raises_when_memory_missing(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    monkeypatch.setenv("NUM_OF_CORES", "4")
+    monkeypatch.delenv("MEMORY_LIMIT", raising=False)
+    monkeypatch.delenv("SLURM_MEM_PER_NODE", raising=False)
+    monkeypatch.delenv("SLURM_MEM_PER_CPU", raising=False)
+
+    with pytest.raises(RuntimeError, match="Set MEMORY_LIMIT"):
+        module._runtime_cluster_config()
