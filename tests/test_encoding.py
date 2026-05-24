@@ -1,11 +1,13 @@
 import pytest
 import numpy as np
+import xarray as xr
+import hdf5plugin
 import sys
 import os
 
 # Adjust import path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../scripts')))
-from scripts.lib.encoding import resolve_fill_value
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from scripts.lib.encoding import build_netcdf_encoding, resolve_fill_value
 
 def test_resolve_fill_value_nan_float32():
     val = resolve_fill_value("nan", "float32")
@@ -40,3 +42,30 @@ def test_resolve_fill_value_word_str_pass():
     val = resolve_fill_value("Amongus", "str")
     assert isinstance(val, (str, np.str_))
     assert val == "Amongus"
+
+
+@pytest.mark.integration
+def test_build_netcdf_encoding_uses_blosc_zstd_for_data_vars_only():
+    ds = xr.Dataset(
+        data_vars={
+            "airTemperature": (("station", "time"), np.ones((2, 3))),
+        },
+        coords={
+            "station": ["a", "b"],
+            "time": np.arange(3),
+        },
+    )
+
+    encoding = build_netcdf_encoding(ds, {"time": 2}, complevel=5)
+    blosc_filter = hdf5plugin.Blosc(
+        cname="zstd",
+        clevel=5,
+        shuffle=hdf5plugin.Blosc.SHUFFLE,
+    )
+
+    assert set(encoding) == {"airTemperature"}
+    assert encoding["airTemperature"] == {
+        "compression": blosc_filter["compression"],
+        "compression_opts": blosc_filter["compression_opts"],
+        "chunksizes": (2, 2),
+    }
