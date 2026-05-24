@@ -1,4 +1,5 @@
 from typing import Any, Mapping, Sequence
+import hdf5plugin
 import numpy as np
 import xarray as xr
 
@@ -25,11 +26,15 @@ def build_netcdf_encoding(
     for var in ds.data_vars:
         var_dims= ds[var].dims
         var_chunks= tuple(chunk_map.get(dim, ds[var].sizes[dim]) for dim in var_dims)
+        blosc_filter = hdf5plugin.Blosc(
+            cname="zstd",
+            clevel=complevel,
+            shuffle=hdf5plugin.Blosc.SHUFFLE,
+        )
         enc[var] = {
-            "zlib": True,
-            "complevel": complevel,
-            "shuffle": True,
-            "chunksizes": var_chunks
+            "compression": blosc_filter["compression"],
+            "compression_opts": blosc_filter["compression_opts"],
+            "chunksizes": var_chunks,
         }
     return enc
 

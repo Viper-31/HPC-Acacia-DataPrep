@@ -13,7 +13,7 @@ Planned next steps to orchestrate the Slurm pipeline with [NextFlow: Reproducibl
 ```
 HPC-Acacia-DataPrep
 │   README.md
-│   setonix_requirement.txt
+│   pyproject.toml
 │
 └───jobs/                   <-- .sh slurm wrappers
 │      stage_in.sh
