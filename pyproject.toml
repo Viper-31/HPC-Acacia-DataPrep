@@ -29,11 +29,9 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath= "."
 testpaths= ["tests"]
-
-# Register markers to avoid warnings
 markers= [
-    "integration: tests that require external dependencies or complex setups"
-    ]
+    "integration: tests that exercise xarray datasets or filesystem-backed NetCDF writes",
+]
 
 [tool.coverage.run]
 branch = true
