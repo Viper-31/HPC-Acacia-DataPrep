@@ -3,8 +3,8 @@
 #SBATCH --partition=work
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=120G
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=200G
 #SBATCH --time=08:00:00
 #SBATCH --array=0-1
 #SBATCH --output=chunk_compress_ecmwf_%A_%a.log

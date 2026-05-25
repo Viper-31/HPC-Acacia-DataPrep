@@ -23,4 +23,10 @@ echo "Starting Chunking and Compression at $(date)"
 
 python -u scripts/chunk_n_compress.py --dpird-only
 
+OUT_FILE="$MYSCRATCH/vz_kerchunk/DPIRD/dpird_wa_stations.nc"
+if [ ! -s "$OUT_FILE" ]; then
+  echo "ERROR: Expected output file missing or empty: $OUT_FILE" >&2
+  exit 1
+fi
+
 echo "Finished at $(date)"
