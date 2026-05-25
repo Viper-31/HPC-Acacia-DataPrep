@@ -10,11 +10,12 @@
 #SBATCH --error=to_zarr_%j.err
 
 module load python/3.11.6
-cd $MYSCRATCH
-source zarr_venv/bin/activate
+REPO_DIR="$MYSCRATCH/HPC-Acacia-DataPrep"
+cd "$REPO_DIR"
+source "$MYSCRATCH/zarr_venv/bin/activate"
 
-export REPO_ROOT="$MYSCRATCH"
-export PYTHONPATH="$MYSCRATCH/scripts:$PYTHONPATH"
+export REPO_ROOT="$REPO_DIR"
+export PYTHONPATH="$REPO_DIR/scripts:$PYTHONPATH"
 
 echo "Starting to Zarr conversion at $(date)"
 

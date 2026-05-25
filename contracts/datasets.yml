@@ -5,13 +5,14 @@ datasets:
         input_root: "acacia_clean_data"
         input_pattern: "DPIRD/DPIRD_final_stations.nc"
         output_root: "vz_kerchunk"
-        chunk_map: { station: 96, time: 13156 }
+        output_pattern: "DPIRD/dpird_wa_stations.nc"
+        chunk_map: { station: 96, time: 52624 }
         complevel: 5
       to_zarr:
-        input_root: "vz_kerchunk"
+        input_root: "acacia_clean_data"
         input_pattern: "DPIRD/DPIRD_final_stations.nc"
         output_root: "zarr_objects"
-        chunk_map: { station: 96, time: 13156 }
+        chunk_map: { station: 192, time: 26312 }
         shard_map: { station: 192, time: 52624 }
         fill_value: "nan"
         fill_value_dtype: "float64"
@@ -20,15 +21,21 @@ datasets:
     stages:
       chunk_n_compress:
         input_root: "acacia_clean_data"
-        input_pattern: "ECMWF/**/*.nc"
         output_root: "vz_kerchunk"
-        chunk_map: { time: 4, step: 25 }
+        years:
+          - year: 2024
+            input_pattern: "ECMWF/2024/**/*.nc"
+            output_pattern: "ECMWF/2024/ecmwf_op.nc"
+          - year: 2025
+            input_pattern: "ECMWF/2025/**/*.nc"
+            output_pattern: "ECMWF/2025/ecmwf_op.nc"
+        chunk_map: { time: 4 }
         complevel: 5
       to_zarr:
         input_root: "acacia_clean_data"
         input_pattern: "ECMWF/**/*.nc"
         output_root: "zarr_objects"
-        chunk_map: { time: 6, step: 113, latitude: 37, longitude: 151 }
+        chunk_map: { time: 6, step: 113, latitude: 111, longitude: 151 }
         shard_map: { time: 120, step: 113, latitude: 111, longitude: 151 }
         fill_value: "nan"
         fill_value_dtype: "float32"

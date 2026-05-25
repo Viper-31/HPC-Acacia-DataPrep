@@ -1,89 +1,139 @@
+import argparse
 import os
-from pathlib import Path
-import warnings
-from dask.distributed import Client, LocalCluster, as_completed
 import xarray as xr
+from dask.distributed import Client, LocalCluster
 
 from lib._contracts import load_contracts, stage_spec, scratch_path
 from lib.encoding import build_netcdf_encoding
-
-warnings.filterwarnings(
-    "ignore",
-    message="Numcodecs codecs are not in the Zarr version 3 specification*",
-    category=UserWarning
-)
+from lib.mfdataset_pipeline import sorted_ecmwf_input_files, validate_unique_ascending_time, write_netcdf_atomic
 
 DATASETS= load_contracts()
-STAGES= {
-    "dpird": stage_spec(DATASETS, "dpird", "chunk_n_compress"),
-    "ecmwf": stage_spec(DATASETS, "ecmwf", "chunk_n_compress")
-}
+DPIRD_SPEC= stage_spec(DATASETS, "dpird", "chunk_n_compress")
+ECMWF_SPEC= stage_spec(DATASETS, "ecmwf", "chunk_n_compress")
 
-def iter_inputs(spec):
-    in_root = scratch_path(spec["input_root"])
-    files = list(in_root.glob(spec["input_pattern"]))
-    return files, in_root
 
-def process_file(in_path, spec, in_root):
-    """Chunks and compresses a single NetCDF file according to contracts/datasets.yml specs."""
-    out_root= scratch_path(spec["output_root"])
-    rel_path= in_path.relative_to(in_root)
-    out_path= out_root / rel_path
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ecmwf-year", type=int, help="Process only one ECMWF year from contracts")
+    parser.add_argument("--dpird-only", action="store_true", help="Process only DPIRD")
+    return parser.parse_known_args()[0]
 
-    try:
-        with xr.open_dataset(in_path, engine="h5netcdf") as ds:
-            ds = ds.chunk(spec["chunk_map"])
-            encoding = build_netcdf_encoding(ds, spec["chunk_map"], complevel=spec["complevel"])
-        
-            ds.to_netcdf(
-                path=out_path,
-                engine="h5netcdf",
-                format="NETCDF4",
-                encoding=encoding
-            )
-        return f"Completed: {in_path} -> {out_path}"
-    except Exception as e:
-        print(f"Error preparing {in_path}: {e}")
-        return None
 
-def main():  
-    # Initialize Dask LocalCluster for Setonix Node (180GB/24 workers= 11.25GB per worker)
+def write_dpird():
+    in_path = scratch_path(DPIRD_SPEC["input_root"]) / DPIRD_SPEC["input_pattern"]
+    out_path = scratch_path(DPIRD_SPEC["output_root"]) / DPIRD_SPEC["output_pattern"]
+    dpird_chunk_map = DPIRD_SPEC["chunk_map"]
+    dpird_complevel = DPIRD_SPEC["complevel"]
+
+    if not in_path.exists():
+        raise FileNotFoundError(f"Missing DPIRD input file: {in_path}")
+    
+    with xr.open_dataset(in_path, engine= "h5netcdf") as ds:
+        ds.attrs.clear()
+        ds = ds.chunk(dpird_chunk_map)
+        dpird_encoding= build_netcdf_encoding(ds, dpird_chunk_map, dpird_complevel)
+        write_netcdf_atomic(ds, out_path, encoding= dpird_encoding)
+    print(f"Completed DPIRD: {in_path} -> {out_path}")
+
+
+def write_ecmwf_year(ecmwf_year_spec):
+    year = ecmwf_year_spec["year"]
+    label = f"ECMWF {year}"
+    input_root = scratch_path(ECMWF_SPEC["input_root"])
+    input_pattern = ecmwf_year_spec["input_pattern"]
+    out_path = scratch_path(ECMWF_SPEC["output_root"]) / ecmwf_year_spec["output_pattern"]
+    ecmwf_chunk_map = ECMWF_SPEC["chunk_map"]
+    ecmwf_complevel = ECMWF_SPEC["complevel"]
+
+    files = sorted_ecmwf_input_files(input_root, input_pattern, label)
+    
+    with xr.open_mfdataset(
+        files,
+        concat_dim="time",
+        combine="nested",
+        parallel=True,
+        engine="h5netcdf",
+        errors="raise",
+        join="exact",
+        combine_attrs="drop_conflicts", # If dataset/dataarray attrs name:value don't match they are dropped 
+    ) as ds:
+        validate_unique_ascending_time(ds,label)
+        ds = ds.chunk(ecmwf_chunk_map)
+        ecmwf_encoding = build_netcdf_encoding(ds, ecmwf_chunk_map, ecmwf_complevel)
+        write_netcdf_atomic(ds, out_path, encoding=ecmwf_encoding)
+
+    print(f"Completed {label}: {len(files)} inputs -> {out_path}")
+
+
+def _get_ecmwf_year_spec(year: int) -> dict:
+    for spec in ECMWF_SPEC["years"]:
+        if spec["year"] == year:
+            return spec
+
+    available = ", ".join(str(item["year"]) for item in sorted(ECMWF_SPEC["years"], key=lambda item: item["year"]))
+    raise ValueError(f"Unknown ECMWF year {year}. Available years: {available}")
+
+
+def _runtime_cluster_config() -> tuple[int, str]:
+    workers_raw= os.getenv("NUM_OF_CORES") or os.getenv("WORKERS") or os.getenv("SLURM_CPUS_PER_TASK")
+    if not workers_raw:
+        raise RuntimeError("Set NUM_OF_CORES/WORKERS so Dask client can initialise with proper worker count")
+    
+    workers= int(workers_raw)
+    # Prefer explicit MEMORY_LIMIT in GB (e.g. "160GB")
+    mem_limit_raw = os.getenv("MEMORY_LIMIT")
+    if mem_limit_raw:
+        mem_limit_raw = mem_limit_raw.strip().upper()
+        total_gb = float(mem_limit_raw[:-2]) if mem_limit_raw.endswith("GB") else float(mem_limit_raw)
+    else:
+        # Fallback from Slurm MB units
+        mem_per_node_mb = os.getenv("SLURM_MEM_PER_NODE")
+        if mem_per_node_mb:
+            total_gb = float(mem_per_node_mb) / 1024.0
+        else:
+            mem_per_cpu_mb = os.getenv("SLURM_MEM_PER_CPU")
+            if not mem_per_cpu_mb:
+                raise RuntimeError("Set MEMORY_LIMIT (GB) or request Slurm memory so SLURM_MEM_PER_NODE/CPU is available.")
+            total_gb = (float(mem_per_cpu_mb) * workers) / 1024.0
+
+    mem_per_worker_gb = max(total_gb / workers, 1.0)
+    return workers, f"{mem_per_worker_gb:.2f}GB"
+
+def main():
+    args = parse_args()
+
+    if args.dpird_only and args.ecmwf_year is not None:
+        raise ValueError("Use either --dpird-only or --ecmwf-year, not both")
+
+    workers, mem_limit = _runtime_cluster_config()
+
     cluster = LocalCluster(
-        n_workers=24, 
-        threads_per_worker=1, # n_workers x threads_per_worker = SBATCH cpus
-        memory_limit="8GB",
+        n_workers=workers,
+        threads_per_worker=1,
+        processes=True,
+        memory_limit=mem_limit,
         dashboard_address=":8787"
     )
+
     client = Client(cluster)
-    print(f"Dask Dashboard available at: {client.dashboard_link}")
+    print(f"workers={workers}, memory_limit_per_worker={mem_limit}, dashboard={client.dashboard_link}")
 
-    all_files = []
-    all_specs = []
-    all_roots = []
+    try:
+        if args.dpird_only:
+            write_dpird()
+            return
 
-    for spec in STAGES.values():
-        files, in_root= iter_inputs(spec)
-        for f in files:
-            all_files.append(f)
-            all_specs.append(spec)
-            all_roots.append(in_root)
+        if args.ecmwf_year is not None:
+            write_ecmwf_year(_get_ecmwf_year_spec(args.ecmwf_year))
+            return
 
-    if not all_files:
-        print("No files found to process. Check staged inputs in $MYSCRATCH")
+        write_dpird()
+        for ecmwf_year_spec in sorted(ECMWF_SPEC["years"], key=lambda item: item["year"]):
+            write_ecmwf_year(ecmwf_year_spec)
+    finally:
         client.close()
         cluster.close()
-        return
 
-    print(f"Submitting {len(all_files)} tasks across {len(client.scheduler_info()['workers'])} workers on cluster ...")
-    
-    futures= client.map(process_file, all_files, all_specs, all_roots)
-    
-    for future in as_completed(futures):
-        print(future.result())
-
-    client.close()
-    cluster.close()
 
 if __name__ == "__main__":
     main()
