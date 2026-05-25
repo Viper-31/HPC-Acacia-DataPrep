@@ -10,6 +10,8 @@
 #SBATCH --output=chunk_compress_ecmwf_%A_%a.log
 #SBATCH --error=chunk_compress_ecmwf_%A_%a.err
 
+set -euo pipefail
+
 module load python/3.11.6
 REPO_DIR="$MYSCRATCH/HPC-Acacia-DataPrep"
 cd "$REPO_DIR"
@@ -32,4 +34,10 @@ echo "Starting ECMWF chunk+compress for year ${YEAR} at $(date)"
 
 python -u scripts/chunk_n_compress.py --ecmwf-year "${YEAR}"
 
-echo "Finished ECMWF year ${YEAR} at $(date)"
+OUT_FILE="$MYSCRATCH/vz_kerchunk/ECMWF/${YEAR}/ecmwf_op.nc"
+if [ ! -s "$OUT_FILE" ]; then
+  echo "ERROR: Expected output file missing or empty: $OUT_FILE" >&2
+  exit 1
+fi
+
+echo "Finished ECMWF year ${YEAR} at $(date): $OUT_FILE"
