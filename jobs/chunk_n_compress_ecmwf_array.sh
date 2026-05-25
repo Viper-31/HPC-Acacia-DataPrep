@@ -11,13 +11,14 @@
 #SBATCH --error=chunk_compress_ecmwf_%A_%a.err
 
 module load python/3.11.6
-cd $MYSCRATCH
-source zarr_venv/bin/activate
+REPO_DIR="$MYSCRATCH/HPC-Acacia-DataPrep"
+cd "$REPO_DIR"
+source "$MYSCRATCH/zarr_venv/bin/activate"
 
 export NUM_OF_CORES="${SLURM_CPUS_PER_TASK}"
 export MEMORY_LIMIT="120GB"
-export REPO_ROOT="$MYSCRATCH"
-export PYTHONPATH="$MYSCRATCH/scripts:$PYTHONPATH"
+export REPO_ROOT="$REPO_DIR"
+export PYTHONPATH="$REPO_DIR/scripts:$PYTHONPATH"
 
 YEARS=(2024 2025)
 YEAR="${YEARS[$SLURM_ARRAY_TASK_ID]}"
