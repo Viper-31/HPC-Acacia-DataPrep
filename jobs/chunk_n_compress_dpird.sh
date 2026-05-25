@@ -3,8 +3,8 @@
 #SBATCH --partition=work
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=24
-#SBATCH --mem=100G
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=16G
 #SBATCH --time=01:00:00
 #SBATCH --output=chunk_compress_dpird_%j.log
 #SBATCH --error=chunk_compress_dpird_%j.err
@@ -14,7 +14,7 @@ cd $MYSCRATCH
 source zarr_venv/bin/activate
 
 export NUM_OF_CORES="${SLURM_CPUS_PER_TASK}"
-export MEMORY_LIMIT="200GB"
+export MEMORY_LIMIT="16GB"
 export REPO_ROOT="$MYSCRATCH"
 export PYTHONPATH="$MYSCRATCH/scripts:$PYTHONPATH"
 
