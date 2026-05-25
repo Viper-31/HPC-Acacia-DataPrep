@@ -1,6 +1,7 @@
 import importlib
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -255,3 +256,44 @@ def test_runtime_cluster_config_raises_when_memory_missing(tmp_path, monkeypatch
 
     with pytest.raises(RuntimeError, match="Set MEMORY_LIMIT"):
         module._runtime_cluster_config()
+
+
+def test_main_runs_only_requested_ecmwf_year(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    calls = []
+
+    class FakeCluster:
+        def __init__(self, **kwargs):
+            calls.append(("cluster", kwargs))
+
+        def close(self):
+            calls.append("cluster_close")
+
+    class FakeClient:
+        def __init__(self, cluster):
+            calls.append(("client", cluster.__class__.__name__))
+            self.dashboard_link = "http://localhost:8787/status"
+
+        def close(self):
+            calls.append("client_close")
+
+    monkeypatch.setattr(module, "LocalCluster", FakeCluster)
+    monkeypatch.setattr(module, "Client", FakeClient)
+    monkeypatch.setattr(module, "_runtime_cluster_config", lambda: (4, "8.00GB"))
+    monkeypatch.setattr(module, "parse_args", lambda: SimpleNamespace(ecmwf_year=2025, dpird_only=False))
+    monkeypatch.setattr(module, "write_dpird", lambda: calls.append("dpird"))
+    monkeypatch.setattr(module, "write_ecmwf_year", lambda spec: calls.append(spec["year"]))
+
+    module.main()
+
+    assert "dpird" not in calls
+    assert 2025 in calls
+    assert 2024 not in calls
+
+
+def test_main_raises_when_dpird_only_and_ecmwf_year_both_set(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "parse_args", lambda: SimpleNamespace(ecmwf_year=2024, dpird_only=True))
+
+    with pytest.raises(ValueError, match="either --dpird-only or --ecmwf-year"):
+        module.main()

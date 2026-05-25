@@ -1,3 +1,4 @@
+import argparse
 import os
 import xarray as xr
 from dask.distributed import Client, LocalCluster
@@ -9,6 +10,13 @@ from lib.mfdataset_pipeline import sorted_ecmwf_input_files, validate_unique_asc
 DATASETS= load_contracts()
 DPIRD_SPEC= stage_spec(DATASETS, "dpird", "chunk_n_compress")
 ECMWF_SPEC= stage_spec(DATASETS, "ecmwf", "chunk_n_compress")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ecmwf-year", type=int, help="Process only one ECMWF year from contracts")
+    parser.add_argument("--dpird-only", action="store_true", help="Process only DPIRD")
+    return parser.parse_known_args()[0]
 
 
 def write_dpird():
@@ -57,7 +65,16 @@ def write_ecmwf_year(ecmwf_year_spec):
     print(f"Completed {label}: {len(files)} inputs -> {out_path}")
 
 
-def _runtime_cluster_config() -> tuple[int:str]:
+def _get_ecmwf_year_spec(year: int) -> dict:
+    for spec in ECMWF_SPEC["years"]:
+        if spec["year"] == year:
+            return spec
+
+    available = ", ".join(str(item["year"]) for item in sorted(ECMWF_SPEC["years"], key=lambda item: item["year"]))
+    raise ValueError(f"Unknown ECMWF year {year}. Available years: {available}")
+
+
+def _runtime_cluster_config() -> tuple[int, str]:
     workers_raw= os.getenv("NUM_OF_CORES") or os.getenv("WORKERS") or os.getenv("SLURM_CPUS_PER_TASK")
     if not workers_raw:
         raise RuntimeError("Set NUM_OF_CORES/WORKERS so Dask client can initialise with proper worker count")
@@ -83,6 +100,11 @@ def _runtime_cluster_config() -> tuple[int:str]:
     return workers, f"{mem_per_worker_gb:.2f}GB"
 
 def main():
+    args = parse_args()
+
+    if args.dpird_only and args.ecmwf_year is not None:
+        raise ValueError("Use either --dpird-only or --ecmwf-year, not both")
+
     workers, mem_limit = _runtime_cluster_config()
 
     cluster = LocalCluster(
@@ -97,6 +119,14 @@ def main():
     print(f"workers={workers}, memory_limit_per_worker={mem_limit}, dashboard={client.dashboard_link}")
 
     try:
+        if args.dpird_only:
+            write_dpird()
+            return
+
+        if args.ecmwf_year is not None:
+            write_ecmwf_year(_get_ecmwf_year_spec(args.ecmwf_year))
+            return
+
         write_dpird()
         for ecmwf_year_spec in sorted(ECMWF_SPEC["years"], key=lambda item: item["year"]):
             write_ecmwf_year(ecmwf_year_spec)

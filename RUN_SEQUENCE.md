@@ -18,6 +18,7 @@ Writes: $MYSCRATCH/acacia_clean_data/DPIRD and $MYSCRATCH/acacia_clean_data/ECMW
 
 2. Chunk + compress NetCDF
 sbatch jobs/chunk_n_compress.sh
+sbatch jobs/chunk_n_compress_ecmwf_array.sh
 Writes: $MYSCRATCH/vz_kerchunk/...
 
 3. Convert to Zarr
