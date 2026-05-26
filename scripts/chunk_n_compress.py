@@ -152,9 +152,6 @@ def main() -> None:
     print("Connecting Dask Client ...", flush=True)
     client = Client(cluster)
 
-    print("Waiting for Dask workers to register...", flush=True)
-    client.wait_for_workers(workers, timeout=600)
-
     print(f"workers={workers}, memory_limit_per_worker={mem_limit}, dashboard={client.dashboard_link}")
 
     try:

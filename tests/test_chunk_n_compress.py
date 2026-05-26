@@ -187,17 +187,25 @@ def test_write_netcdf_atomic_removes_stale_temp_before_writing(tmp_path, monkeyp
     tmp_path_nc.parent.mkdir(parents=True)
     tmp_path_nc.write_text("stale temp", encoding="utf-8")
 
-    def write_replacement(self, path, *args, **kwargs):
-        assert not Path(path).exists()
-        Path(path).write_text("new complete output", encoding="utf-8")
+    class FakeWriteTask:
+        def __init__(self, path):
+            self.path = Path(path)
 
-    monkeypatch.setattr(xr.Dataset, "to_netcdf", write_replacement)
+        def compute(self, scheduler):
+            assert scheduler == "single-threaded"
+            self.path.write_text("new complete output", encoding="utf-8")
+
+    def fake_to_netcdf(self, path, *args, **kwargs):
+        assert kwargs["compute"] is False
+        assert not Path(path).exists()
+        return FakeWriteTask(path)
+
+    monkeypatch.setattr(xr.Dataset, "to_netcdf", fake_to_netcdf)
 
     module.write_netcdf_atomic(ds, out_path, encoding={})
 
     assert out_path.read_text(encoding="utf-8") == "new complete output"
     assert not tmp_path_nc.exists()
-
 
 @pytest.mark.integration
 def test_write_netcdf_atomic_removes_temp_and_keeps_existing_output_on_failure(
@@ -293,7 +301,7 @@ def test_main_submits_all_files_with_client_map_and_closes_cluster(tmp_path, mon
     ]
 
 
-def test_main_exits_nonzero_after_all_futures_when_any_file_fails(tmp_path, monkeypatch):
+def test_main_fails_fast(tmp_path, monkeypatch):
     module = _import_chunk_n_compress(tmp_path, monkeypatch)
     input_root = tmp_path / "acacia_clean_data"
     calls = []
@@ -328,6 +336,9 @@ def test_main_exits_nonzero_after_all_futures_when_any_file_fails(tmp_path, monk
                 FakeFuture(SimpleNamespace(ok=True, message="second succeeded")),
             ]
 
+        def cancel(self, futures, force):
+            calls.append(("cancel", [future._result.message for future in futures], force))
+
         def close(self):
             calls.append("client_close")
 
@@ -341,7 +352,7 @@ def test_main_exits_nonzero_after_all_futures_when_any_file_fails(tmp_path, monk
         module.main()
 
     assert exc_info.value.code == 1
-    assert calls == ["first failed", "second succeeded", "client_close", "cluster_close"]
+    assert calls == ["first failed", ("cancel", ["second succeeded"], True), "client_close", "cluster_close"]
 
 
 def test_main_returns_without_error_when_no_files_found(tmp_path, monkeypatch):
