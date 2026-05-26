@@ -1,9 +1,12 @@
 import importlib
 import os
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+import xarray as xr
 
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -24,22 +27,15 @@ datasets:
         input_root: acacia_clean_data
         input_pattern: DPIRD/DPIRD_final_stations.nc
         output_root: vz_kerchunk
-        output_pattern: DPIRD/dpird_wa_stations.nc
         chunk_map: {station: 96, time: 52624}
         complevel: 5
   ecmwf:
     stages:
       chunk_n_compress:
         input_root: acacia_clean_data
+        input_pattern: ECMWF/**/*.nc
         output_root: vz_kerchunk
-        years:
-          - year: 2025
-            input_pattern: ECMWF/2025/**/*.nc
-            output_pattern: ECMWF/2025/ecmwf_op.nc
-          - year: 2024
-            input_pattern: ECMWF/2024/**/*.nc
-            output_pattern: ECMWF/2024/ecmwf_op.nc
-        chunk_map: {time: 4}
+        chunk_map: {time: 4, step: 113, latitude: 111, longitude: 151}
         complevel: 5
 """.strip(),
         encoding="utf-8",
@@ -56,7 +52,7 @@ def _import_chunk_n_compress(tmp_path, monkeypatch):
 
 class FakeDataset:
     def __init__(self):
-        self.attrs = {"remove": "me"}
+        self.attrs = {"source": "keep-or-clear"}
         self.chunk_map = None
 
     def __enter__(self):
@@ -70,11 +66,36 @@ class FakeDataset:
         return self
 
 
-def test_write_dpird_drops_dataset_attrs_and_writes_atomic(tmp_path, monkeypatch):
+def test_iter_inputs_returns_matching_files_and_input_root(tmp_path, monkeypatch):
     module = _import_chunk_n_compress(tmp_path, monkeypatch)
-    in_path = tmp_path / "acacia_clean_data/DPIRD/DPIRD_final_stations.nc"
-    in_path.parent.mkdir(parents=True)
-    in_path.write_text("placeholder", encoding="utf-8")
+    input_root = tmp_path / "acacia_clean_data"
+    first = input_root / "ECMWF/2024/02/06.nc"
+    second = input_root / "ECMWF/2024/02/07.nc"
+    ignored = input_root / "README.txt"
+    for path in (first, second, ignored):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("placeholder", encoding="utf-8")
+
+    files, root = module.iter_inputs(module.STAGES["ecmwf"])
+
+    assert root == input_root
+    assert sorted(files) == [first, second]
+
+
+def test_output_path_for_preserves_input_relative_layout(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    input_root = tmp_path / "acacia_clean_data"
+    in_path = input_root / "ECMWF/2025/01/31.nc"
+
+    out_path = module.output_path_for(in_path, module.STAGES["ecmwf"], input_root)
+
+    assert out_path == tmp_path / "vz_kerchunk/ECMWF/2025/01/31.nc"
+
+
+def test_process_file_clears_dpird_attrs_and_writes_atomic(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    input_root = tmp_path / "acacia_clean_data"
+    in_path = input_root / "DPIRD/DPIRD_final_stations.nc"
     fake_ds = FakeDataset()
     calls = {}
 
@@ -88,95 +109,125 @@ def test_write_dpird_drops_dataset_attrs_and_writes_atomic(tmp_path, monkeypatch
 
     def write_atomic(ds, out_path, encoding):
         calls["write_atomic"] = (ds, out_path, encoding)
+        return out_path
 
     monkeypatch.setattr(module.xr, "open_dataset", open_dataset)
     monkeypatch.setattr(module, "build_netcdf_encoding", build_encoding)
     monkeypatch.setattr(module, "write_netcdf_atomic", write_atomic)
 
-    module.write_dpird()
+    result = module.process_file(in_path, module.STAGES["dpird"], input_root, "dpird")
 
+    assert result.ok is True
+    assert result.out_path == tmp_path / "vz_kerchunk/DPIRD/DPIRD_final_stations.nc"
     assert fake_ds.attrs == {}
     assert fake_ds.chunk_map == {"station": 96, "time": 52624}
     assert calls["open_dataset"] == (in_path, "h5netcdf")
     assert calls["build_encoding"] == (fake_ds, {"station": 96, "time": 52624}, 5)
-    assert calls["write_atomic"] == (
-        fake_ds,
-        tmp_path / "vz_kerchunk/DPIRD/dpird_wa_stations.nc",
-        {"encoded": {}},
-    )
+    assert calls["write_atomic"] == (fake_ds, result.out_path, {"encoded": {}})
 
 
-def test_write_dpird_raises_when_input_missing(tmp_path, monkeypatch):
+def test_process_file_keeps_ecmwf_attrs_and_writes_input_relative_output(tmp_path, monkeypatch):
     module = _import_chunk_n_compress(tmp_path, monkeypatch)
-
-    with pytest.raises(FileNotFoundError, match="Missing DPIRD input file"):
-        module.write_dpird()
-
-
-def test_write_ecmwf_year_uses_strict_open_mfdataset_and_writes_atomic(tmp_path, monkeypatch):
-    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    input_root = tmp_path / "acacia_clean_data"
+    in_path = input_root / "ECMWF/2024/02/06.nc"
     fake_ds = FakeDataset()
-    files = [tmp_path / "acacia_clean_data/ECMWF/2024/02/06.nc"]
-    calls = {}
 
-    def sorted_files(input_root, input_pattern, label):
-        calls["sorted_files"] = (input_root, input_pattern, label)
-        return files
+    monkeypatch.setattr(module.xr, "open_dataset", lambda path, engine: fake_ds)
+    monkeypatch.setattr(module, "build_netcdf_encoding", lambda ds, chunk_map, complevel: {"encoded": {}})
+    monkeypatch.setattr(module, "write_netcdf_atomic", lambda ds, out_path, encoding: out_path)
 
-    def open_mfdataset(files_arg, **kwargs):
-        calls["open_mfdataset"] = (files_arg, kwargs)
-        return fake_ds
+    result = module.process_file(in_path, module.STAGES["ecmwf"], input_root, "ecmwf")
 
-    def validate_time(ds, label):
-        calls["validate_time"] = (ds, label)
-
-    def build_encoding(ds, chunk_map, complevel):
-        calls["build_encoding"] = (ds, chunk_map, complevel)
-        return {"encoded": {}}
-
-    def write_atomic(ds, out_path, encoding):
-        calls["write_atomic"] = (ds, out_path, encoding)
-
-    monkeypatch.setattr(module, "sorted_ecmwf_input_files", sorted_files)
-    monkeypatch.setattr(module.xr, "open_mfdataset", open_mfdataset)
-    monkeypatch.setattr(module, "validate_unique_ascending_time", validate_time)
-    monkeypatch.setattr(module, "build_netcdf_encoding", build_encoding)
-    monkeypatch.setattr(module, "write_netcdf_atomic", write_atomic)
-
-    module.write_ecmwf_year({
-        "year": 2024,
-        "input_pattern": "ECMWF/2024/**/*.nc",
-        "output_pattern": "ECMWF/2024/ecmwf_op.nc",
-    })
-
-    assert calls["sorted_files"] == (
-        tmp_path / "acacia_clean_data",
-        "ECMWF/2024/**/*.nc",
-        "ECMWF 2024",
-    )
-    assert calls["open_mfdataset"] == (
-        files,
-        {
-            "concat_dim": "time",
-            "combine": "nested",
-            "parallel": True,
-            "engine": "h5netcdf",
-            "errors": "raise",
-            "join": "exact",
-            "combine_attrs": "drop_conflicts",
-        },
-    )
-    assert calls["validate_time"] == (fake_ds, "ECMWF 2024")
-    assert calls["build_encoding"] == (fake_ds, {"time": 4}, 5)
-    assert calls["write_atomic"] == (
-        fake_ds,
-        tmp_path / "vz_kerchunk/ECMWF/2024/ecmwf_op.nc",
-        {"encoded": {}},
-    )
+    assert result.ok is True
+    assert result.out_path == tmp_path / "vz_kerchunk/ECMWF/2024/02/06.nc"
+    assert fake_ds.attrs == {"source": "keep-or-clear"}
+    assert fake_ds.chunk_map == {"time": 4, "step": 113, "latitude": 111, "longitude": 151}
 
 
-def test_main_writes_dpird_then_ecmwf_years_in_sorted_order(tmp_path, monkeypatch):
+def test_process_file_returns_failure_result_without_raising(tmp_path, monkeypatch):
     module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    input_root = tmp_path / "acacia_clean_data"
+    in_path = input_root / "ECMWF/2024/02/06.nc"
+
+    def open_dataset(path, engine):
+        raise OSError("cannot read")
+
+    monkeypatch.setattr(module.xr, "open_dataset", open_dataset)
+
+    result = module.process_file(in_path, module.STAGES["ecmwf"], input_root, "ecmwf")
+
+    assert result.ok is False
+    assert result.in_path == in_path
+    assert result.out_path == tmp_path / "vz_kerchunk/ECMWF/2024/02/06.nc"
+    assert "cannot read" in result.message
+
+
+@pytest.mark.integration
+def test_write_netcdf_atomic_replaces_existing_output_after_success(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    ds = xr.Dataset({"t2m": ("time", np.array([1.0, 2.0]))})
+    out_path = tmp_path / "ECMWF/2024/02/06.nc"
+    out_path.parent.mkdir(parents=True)
+    out_path.write_text("old failed output", encoding="utf-8")
+
+    result = module.write_netcdf_atomic(ds, out_path, encoding={})
+
+    assert result == out_path
+    assert out_path.exists()
+    assert out_path.stat().st_size > len("old failed output")
+    assert not (out_path.parent / ".06.nc.tmp").exists()
+
+
+@pytest.mark.integration
+def test_write_netcdf_atomic_removes_stale_temp_before_writing(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    ds = xr.Dataset({"t2m": ("time", np.array([1.0, 2.0]))})
+    out_path = tmp_path / "DPIRD/DPIRD_final_stations.nc"
+    tmp_path_nc = out_path.parent / ".DPIRD_final_stations.nc.tmp"
+    tmp_path_nc.parent.mkdir(parents=True)
+    tmp_path_nc.write_text("stale temp", encoding="utf-8")
+
+    def write_replacement(self, path, *args, **kwargs):
+        assert not Path(path).exists()
+        Path(path).write_text("new complete output", encoding="utf-8")
+
+    monkeypatch.setattr(xr.Dataset, "to_netcdf", write_replacement)
+
+    module.write_netcdf_atomic(ds, out_path, encoding={})
+
+    assert out_path.read_text(encoding="utf-8") == "new complete output"
+    assert not tmp_path_nc.exists()
+
+
+@pytest.mark.integration
+def test_write_netcdf_atomic_removes_temp_and_keeps_existing_output_on_failure(
+    tmp_path,
+    monkeypatch,
+):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    ds = xr.Dataset({"t2m": ("time", np.array([1.0, 2.0]))})
+    out_path = tmp_path / "ECMWF/2024/02/06.nc"
+    out_path.parent.mkdir(parents=True)
+    out_path.write_text("previous complete output", encoding="utf-8")
+
+    def fail_to_netcdf(self, path, *args, **kwargs):
+        Path(path).write_text("partial output", encoding="utf-8")
+        raise OSError("boom")
+
+    monkeypatch.setattr(xr.Dataset, "to_netcdf", fail_to_netcdf)
+
+    with pytest.raises(RuntimeError, match="Failed writing NetCDF artifact"):
+        module.write_netcdf_atomic(ds, out_path, encoding={})
+
+    assert out_path.read_text(encoding="utf-8") == "previous complete output"
+    assert not (out_path.parent / ".06.nc.tmp").exists()
+
+
+def test_main_submits_all_files_with_client_map_and_closes_cluster(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    input_root = tmp_path / "acacia_clean_data"
+    dpird_file = input_root / "DPIRD/DPIRD_final_stations.nc"
+    ecmwf_file = input_root / "ECMWF/2024/02/06.nc"
     calls = []
 
     class FakeCluster:
@@ -186,42 +237,141 @@ def test_main_writes_dpird_then_ecmwf_years_in_sorted_order(tmp_path, monkeypatc
         def close(self):
             calls.append("cluster_close")
 
+    class FakeFuture:
+        def __init__(self, result):
+            self._result = result
+
+        def result(self):
+            calls.append(("future_result", self._result.message))
+            return self._result
+
     class FakeClient:
         def __init__(self, cluster):
             calls.append(("client", cluster.__class__.__name__))
             self.dashboard_link = "http://localhost:8787/status"
+
+        def scheduler_info(self):
+            return {"workers": {"a": {}, "b": {}}}
+
+        def map(self, func, files, specs, roots, dataset_names):
+            calls.append(("map", files, specs, roots, dataset_names))
+            return [
+                FakeFuture(SimpleNamespace(ok=True, message="dpird ok")),
+                FakeFuture(SimpleNamespace(ok=True, message="ecmwf ok")),
+            ]
+
+        def close(self):
+            calls.append("client_close")
+
+    def iter_inputs(spec):
+        if spec is module.STAGES["dpird"]:
+            return [dpird_file], input_root
+        return [ecmwf_file], input_root
+
+    monkeypatch.setattr(module, "LocalCluster", FakeCluster)
+    monkeypatch.setattr(module, "Client", FakeClient)
+    monkeypatch.setattr(module, "as_completed", lambda futures: futures, raising=False)
+    monkeypatch.setattr(module, "_runtime_cluster_config", lambda: (2, "100.00GB"))
+    monkeypatch.setattr(module, "iter_inputs", iter_inputs)
+
+    module.main()
+
+    assert calls == [
+        ("cluster", {
+            "n_workers": 2,
+            "threads_per_worker": 1,
+            "processes": True,
+            "memory_limit": "100.00GB",
+            "dashboard_address": ":8787",
+        }),
+        ("client", "FakeCluster"),
+        ("map", [dpird_file, ecmwf_file], [module.STAGES["dpird"], module.STAGES["ecmwf"]], [input_root, input_root], ["dpird", "ecmwf"]),
+        ("future_result", "dpird ok"),
+        ("future_result", "ecmwf ok"),
+        "client_close",
+        "cluster_close",
+    ]
+
+
+def test_main_exits_nonzero_after_all_futures_when_any_file_fails(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    input_root = tmp_path / "acacia_clean_data"
+    calls = []
+
+    class FakeCluster:
+        def __init__(self, **kwargs):
+            pass
+
+        def close(self):
+            calls.append("cluster_close")
+
+    class FakeFuture:
+        def __init__(self, result):
+            self._result = result
+
+        def result(self):
+            calls.append(self._result.message)
+            return self._result
+
+    class FakeClient:
+        dashboard_link = "http://localhost:8787/status"
+
+        def __init__(self, cluster):
+            pass
+
+        def scheduler_info(self):
+            return {"workers": {"a": {}}}
+
+        def map(self, func, files, specs, roots, dataset_names):
+            return [
+                FakeFuture(SimpleNamespace(ok=False, message="first failed")),
+                FakeFuture(SimpleNamespace(ok=True, message="second succeeded")),
+            ]
 
         def close(self):
             calls.append("client_close")
 
     monkeypatch.setattr(module, "LocalCluster", FakeCluster)
     monkeypatch.setattr(module, "Client", FakeClient)
-    monkeypatch.setattr(module, "_runtime_cluster_config", lambda: (4, "8.00GB"))
+    monkeypatch.setattr(module, "as_completed", lambda futures: futures, raising=False)
+    monkeypatch.setattr(module, "_runtime_cluster_config", lambda: (1, "100.00GB"))
+    monkeypatch.setattr(module, "iter_inputs", lambda spec: ([input_root / "file.nc"], input_root))
 
-    monkeypatch.setattr(module, "write_dpird", lambda: calls.append("dpird"))
-    monkeypatch.setattr(
-        module,
-        "write_ecmwf_year",
-        lambda spec: calls.append(spec["year"]),
-    )
+    with pytest.raises(SystemExit) as exc_info:
+        module.main()
+
+    assert exc_info.value.code == 1
+    assert calls == ["first failed", "second succeeded", "client_close", "cluster_close"]
+
+
+def test_main_returns_without_error_when_no_files_found(tmp_path, monkeypatch):
+    module = _import_chunk_n_compress(tmp_path, monkeypatch)
+    calls = []
+
+    class FakeCluster:
+        def __init__(self, **kwargs):
+            pass
+
+        def close(self):
+            calls.append("cluster_close")
+
+    class FakeClient:
+        dashboard_link = "http://localhost:8787/status"
+
+        def __init__(self, cluster):
+            pass
+
+        def close(self):
+            calls.append("client_close")
+
+    monkeypatch.setattr(module, "LocalCluster", FakeCluster)
+    monkeypatch.setattr(module, "Client", FakeClient)
+    monkeypatch.setattr(module, "_runtime_cluster_config", lambda: (1, "100.00GB"))
+    monkeypatch.setattr(module, "iter_inputs", lambda spec: ([], tmp_path / "acacia_clean_data"))
 
     module.main()
 
-    assert calls == [
-        ("cluster", {
-            "n_workers": 4,
-            "threads_per_worker": 1,
-            "processes": True,
-            "memory_limit": "8.00GB",
-            "dashboard_address": ":8787",
-        }),
-        ("client", "FakeCluster"),
-        "dpird",
-        2024,
-        2025,
-        "client_close",
-        "cluster_close",
-    ]
+    assert calls == ["client_close", "cluster_close"]
 
 
 def test_runtime_cluster_config_raises_when_workers_missing(tmp_path, monkeypatch):
@@ -256,44 +406,3 @@ def test_runtime_cluster_config_raises_when_memory_missing(tmp_path, monkeypatch
 
     with pytest.raises(RuntimeError, match="Set MEMORY_LIMIT"):
         module._runtime_cluster_config()
-
-
-def test_main_runs_only_requested_ecmwf_year(tmp_path, monkeypatch):
-    module = _import_chunk_n_compress(tmp_path, monkeypatch)
-    calls = []
-
-    class FakeCluster:
-        def __init__(self, **kwargs):
-            calls.append(("cluster", kwargs))
-
-        def close(self):
-            calls.append("cluster_close")
-
-    class FakeClient:
-        def __init__(self, cluster):
-            calls.append(("client", cluster.__class__.__name__))
-            self.dashboard_link = "http://localhost:8787/status"
-
-        def close(self):
-            calls.append("client_close")
-
-    monkeypatch.setattr(module, "LocalCluster", FakeCluster)
-    monkeypatch.setattr(module, "Client", FakeClient)
-    monkeypatch.setattr(module, "_runtime_cluster_config", lambda: (4, "8.00GB"))
-    monkeypatch.setattr(module, "parse_args", lambda: SimpleNamespace(ecmwf_year=2025, dpird_only=False))
-    monkeypatch.setattr(module, "write_dpird", lambda: calls.append("dpird"))
-    monkeypatch.setattr(module, "write_ecmwf_year", lambda spec: calls.append(spec["year"]))
-
-    module.main()
-
-    assert "dpird" not in calls
-    assert 2025 in calls
-    assert 2024 not in calls
-
-
-def test_main_raises_when_dpird_only_and_ecmwf_year_both_set(tmp_path, monkeypatch):
-    module = _import_chunk_n_compress(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "parse_args", lambda: SimpleNamespace(ecmwf_year=2024, dpird_only=True))
-
-    with pytest.raises(ValueError, match="either --dpird-only or --ecmwf-year"):
-        module.main()
