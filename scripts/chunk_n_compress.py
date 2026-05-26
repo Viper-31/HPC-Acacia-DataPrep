@@ -152,6 +152,10 @@ def main() -> None:
         for dataset_name, spec in STAGES.items():
             files, in_root = iter_inputs(spec)
             for file_path in files:
+                # Do not have workers race to mkdir
+                out_path =  output_path_for(file_path, spec, in_root)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+
                 all_files.append(file_path)
                 all_specs.append(spec)
                 all_roots.append(in_root)
