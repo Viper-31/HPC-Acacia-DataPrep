@@ -19,7 +19,7 @@ source "$MYSCRATCH/zarr_venv/bin/activate"
 export NUM_OF_CORES="${SLURM_CPUS_PER_TASK}"
 export MEMORY_LIMIT="200GB"
 export REPO_ROOT="$REPO_DIR"
-export PYTHONPATH="$REPO_DIR/scripts:${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$REPO_DIR/scripts${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "Starting Chunking and Compression at $(date)"
 
