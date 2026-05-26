@@ -1,78 +1,106 @@
-import argparse
 import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Mapping, Any
+
 import xarray as xr
-from dask.distributed import Client, LocalCluster
+from dask.distributed import Client, LocalCluster, as_completed
 
 from lib._contracts import load_contracts, stage_spec, scratch_path
 from lib.encoding import build_netcdf_encoding
-from lib.mfdataset_pipeline import sorted_ecmwf_input_files, validate_unique_ascending_time, write_netcdf_atomic
 
 DATASETS= load_contracts()
-DPIRD_SPEC= stage_spec(DATASETS, "dpird", "chunk_n_compress")
-ECMWF_SPEC= stage_spec(DATASETS, "ecmwf", "chunk_n_compress")
+STAGES= {
+    "dpird": stage_spec(DATASETS, "dpird", "chunk_n_compress"),
+    "ecmwf": stage_spec(DATASETS, "ecmwf", "chunk_n_compress")
+}
+
+@dataclass(frozen=True)
+class ProcessResult:
+    ok: bool
+    in_path: Path
+    out_path: Path
+    message: str
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--ecmwf-year", type=int, help="Process only one ECMWF year from contracts")
-    parser.add_argument("--dpird-only", action="store_true", help="Process only DPIRD")
-    return parser.parse_known_args()[0]
+def iter_inputs(spec: Mapping[str, Any]) -> tuple[list[Path], Path]:
+    in_root = scratch_path(spec["input_root"])
+    files = list(in_root.glob(spec["input_pattern"]))
+    return files, in_root
 
 
-def write_dpird():
-    in_path = scratch_path(DPIRD_SPEC["input_root"]) / DPIRD_SPEC["input_pattern"]
-    out_path = scratch_path(DPIRD_SPEC["output_root"]) / DPIRD_SPEC["output_pattern"]
-    dpird_chunk_map = DPIRD_SPEC["chunk_map"]
-    dpird_complevel = DPIRD_SPEC["complevel"]
+def output_path_for(in_path: Path, spec: Mapping[str, Any], in_root: Path) -> Path:
+    out_root = scratch_path(spec["output_root"])
+    rel_path = in_path.relative_to(in_root)
+    return out_root / rel_path
 
-    if not in_path.exists():
-        raise FileNotFoundError(f"Missing DPIRD input file: {in_path}")
+def write_netcdf_atomic(
+    ds: xr.Dataset,
+    out_path: Path | str,
+    encoding: Mapping[str, Mapping[str,Any]] | None,
+    *,
+    engine: str = "h5netcdf",
+    netcdf_format: str = "NETCDF4"
+) -> Path:
+    final_path = Path(out_path)
+    tmp_path= final_path.with_name(f".{final_path.name}.tmp")
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Clear artefacts from old (failed) runs
+    if tmp_path.exists():
+        tmp_path.unlink()
+
+    try:
+        ds.to_netcdf(
+            path=tmp_path,
+            engine=engine,
+            format=netcdf_format,
+            encoding=encoding
+        )
     
-    with xr.open_dataset(in_path, engine= "h5netcdf") as ds:
-        ds.attrs.clear()
-        ds = ds.chunk(dpird_chunk_map)
-        dpird_encoding= build_netcdf_encoding(ds, dpird_chunk_map, dpird_complevel)
-        write_netcdf_atomic(ds, out_path, encoding= dpird_encoding)
-    print(f"Completed DPIRD: {in_path} -> {out_path}")
-
-
-def write_ecmwf_year(ecmwf_year_spec):
-    year = ecmwf_year_spec["year"]
-    label = f"ECMWF {year}"
-    input_root = scratch_path(ECMWF_SPEC["input_root"])
-    input_pattern = ecmwf_year_spec["input_pattern"]
-    out_path = scratch_path(ECMWF_SPEC["output_root"]) / ecmwf_year_spec["output_pattern"]
-    ecmwf_chunk_map = ECMWF_SPEC["chunk_map"]
-    ecmwf_complevel = ECMWF_SPEC["complevel"]
-
-    files = sorted_ecmwf_input_files(input_root, input_pattern, label)
+    except Exception as exc:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise RuntimeError(f"Failed writing NetCDF artifact {final_path}: {exc}") from exc
     
-    with xr.open_mfdataset(
-        files,
-        concat_dim="time",
-        combine="nested",
-        parallel=True,
-        engine="h5netcdf",
-        errors="raise",
-        join="exact",
-        combine_attrs="drop_conflicts", # If dataset/dataarray attrs name:value don't match they are dropped 
-    ) as ds:
-        validate_unique_ascending_time(ds,label)
-        ds = ds.chunk(ecmwf_chunk_map)
-        ecmwf_encoding = build_netcdf_encoding(ds, ecmwf_chunk_map, ecmwf_complevel)
-        write_netcdf_atomic(ds, out_path, encoding=ecmwf_encoding)
-
-    print(f"Completed {label}: {len(files)} inputs -> {out_path}")
+    # If to_netcdf() suceeeds with no Exception, return final path to print Sucess
+    tmp_path.replace(final_path)
+    return final_path
 
 
-def _get_ecmwf_year_spec(year: int) -> dict:
-    for spec in ECMWF_SPEC["years"]:
-        if spec["year"] == year:
-            return spec
-
-    available = ", ".join(str(item["year"]) for item in sorted(ECMWF_SPEC["years"], key=lambda item: item["year"]))
-    raise ValueError(f"Unknown ECMWF year {year}. Available years: {available}")
-
+def process_file(
+    in_path: Path, 
+    spec: Mapping[str, Any], 
+    in_root: Path, 
+    dataset_name: str
+) -> ProcessResult:
+    out_path = output_path_for(in_path, spec, in_root)
+    
+    try:
+        with xr.open_dataset(in_path, engine="h5netcdf") as ds:
+            if dataset_name == "dpird":
+                # Strip global dataset attribute from dprid ds. Removes GMT+8 mention
+                ds.attrs.clear()
+            
+            ds=ds.chunk(spec["chunk_map"])
+            encoding= build_netcdf_encoding(ds, spec["chunk_map"], complevel=spec["complevel"])
+            write_netcdf_atomic(ds, out_path, encoding=encoding)
+        
+        return ProcessResult(
+            ok=True,
+            in_path=in_path,
+            out_path=out_path,
+            message=f"Completed: {in_path} -> {out_path}"
+        )
+    
+    except Exception as exc:
+        return ProcessResult(
+            ok=False,
+            in_path=in_path,
+            out_path=out_path,
+            message=f"Error preparing: {in_path}: {exc}"
+        )
+        
 
 def _runtime_cluster_config() -> tuple[int, str]:
     workers_raw= os.getenv("NUM_OF_CORES") or os.getenv("WORKERS") or os.getenv("SLURM_CPUS_PER_TASK")
@@ -99,12 +127,7 @@ def _runtime_cluster_config() -> tuple[int, str]:
     mem_per_worker_gb = max(total_gb / workers, 1.0)
     return workers, f"{mem_per_worker_gb:.2f}GB"
 
-def main():
-    args = parse_args()
-
-    if args.dpird_only and args.ecmwf_year is not None:
-        raise ValueError("Use either --dpird-only or --ecmwf-year, not both")
-
+def main() -> None:
     workers, mem_limit = _runtime_cluster_config()
 
     cluster = LocalCluster(
@@ -118,18 +141,47 @@ def main():
     client = Client(cluster)
     print(f"workers={workers}, memory_limit_per_worker={mem_limit}, dashboard={client.dashboard_link}")
 
+    failures = 0
+
     try:
-        if args.dpird_only:
-            write_dpird()
-            return
+        all_files: list[Path] = []
+        all_specs: list[Mapping[str, Any]] = []
+        all_roots: list[Path] = []
+        all_dataset_names: list[str] = []
 
-        if args.ecmwf_year is not None:
-            write_ecmwf_year(_get_ecmwf_year_spec(args.ecmwf_year))
+        for dataset_name, spec in STAGES.items():
+            files, in_root = iter_inputs(spec)
+            for file_path in files:
+                all_files.append(file_path)
+                all_specs.append(spec)
+                all_roots.append(in_root)
+                all_dataset_names.append(dataset_name)
+        
+        if not all_files:
+            print("No files found to process. Check staged inputs in $MYSCRATCH/acacia_clean_data")
             return
+        
+        print(
+            f"Submitting {len(all_files)} tasks across "
+            f"{len(client.scheduler_info()['workers'])} workers on cluster ..."
+        )
 
-        write_dpird()
-        for ecmwf_year_spec in sorted(ECMWF_SPEC["years"], key=lambda item: item["year"]):
-            write_ecmwf_year(ecmwf_year_spec)
+        futures = client.map(process_file, all_files, all_specs, all_roots, all_dataset_names)
+
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+            except Exception as exc:
+                failures += 1
+                print(f"Task failed before returning a result: {exc}")
+                continue
+            
+            print(result.message)
+            if not result.ok:
+                failures += 1
+        
+        if failures:
+            raise SystemExit(1)
     finally:
         client.close()
         cluster.close()
