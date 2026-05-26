@@ -199,12 +199,11 @@ def main() -> None:
             
             print(result.message)
 
-        # Fail fast on all future jobs for any error.
-        if not result.ok:
-            client.cancel(list(pending), force=True)
-            raise SystemExit(1)
+            # Fail fast on all future jobs for any error.
+            if not result.ok:
+                client.cancel(list(pending), force=True)
+                raise SystemExit(1)
                 
-
     finally:
         client.close()
         cluster.close()
