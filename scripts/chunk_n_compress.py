@@ -51,12 +51,14 @@ def write_netcdf_atomic(
         tmp_path.unlink()
 
     try:
-        ds.to_netcdf(
+        write_task= ds.to_netcdf(
             path=tmp_path,
             engine=engine,
             format=netcdf_format,
-            encoding=encoding
+            encoding=encoding,
+            compute=False
         )
+        write_task.compute(scheduler="single-threaded")
     
     except Exception as exc:
         if tmp_path.exists():
@@ -129,19 +131,31 @@ def _runtime_cluster_config() -> tuple[int, str]:
 
 def main() -> None:
     workers, mem_limit = _runtime_cluster_config()
+    print(
+        f"Resolved runtime config: workers={workers}, "
+        f"memory_limit_per_worker={mem_limit}",
+        flush=True,
+    )
 
+# process=True starts seperate worker processes, increasing Dask client startup time (~15 mins)
+# Each worker must load its own Python environment + packages. Such that independent HDF read/write are independent
+# They do not share memory, unlike threads (process=False) so 1 fail write will not take down all processes
+    print("Starting Dask LocalCluster...", flush=True)
     cluster = LocalCluster(
         n_workers=workers,
         threads_per_worker=1,
-        processes=True,
+        processes=True, 
         memory_limit=mem_limit,
         dashboard_address=":8787"
     )
 
+    print("Connecting Dask Client ...", flush=True)
     client = Client(cluster)
-    print(f"workers={workers}, memory_limit_per_worker={mem_limit}, dashboard={client.dashboard_link}")
 
-    failures = 0
+    print("Waiting for Dask workers to register...", flush=True)
+    client.wait_for_workers(workers, timeout=600)
+
+    print(f"workers={workers}, memory_limit_per_worker={mem_limit}, dashboard={client.dashboard_link}")
 
     try:
         all_files: list[Path] = []
@@ -171,21 +185,26 @@ def main() -> None:
         )
 
         futures = client.map(process_file, all_files, all_specs, all_roots, all_dataset_names)
+        pending = set(futures)
 
         for future in as_completed(futures):
+            pending.discard(future)
+
             try:
                 result = future.result()
             except Exception as exc:
-                failures += 1
                 print(f"Task failed before returning a result: {exc}")
-                continue
+                client.cancel(list(pending), force=True)
+                raise SystemExit(1) from exc 
             
             print(result.message)
-            if not result.ok:
-                failures += 1
-        
-        if failures:
+
+        # Fail fast on all future jobs for any error.
+        if not result.ok:
+            client.cancel(list(pending), force=True)
             raise SystemExit(1)
+                
+
     finally:
         client.close()
         cluster.close()

@@ -3,7 +3,7 @@
 #SBATCH --partition=work
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=16
 #SBATCH --mem=200G
 #SBATCH --time=04:00:00
 #SBATCH --output=chunk_compress_%j.log
@@ -16,7 +16,7 @@ REPO_DIR="$MYSCRATCH/HPC-Acacia-DataPrep"
 cd "$REPO_DIR"
 source "$MYSCRATCH/zarr_venv/bin/activate"
 
-export NUM_OF_CORES="24"
+export NUM_OF_CORES="16"
 export MEMORY_LIMIT="200GB"
 export REPO_ROOT="$REPO_DIR"
 export PYTHONPATH="$REPO_DIR/scripts${PYTHONPATH:+:$PYTHONPATH}"
