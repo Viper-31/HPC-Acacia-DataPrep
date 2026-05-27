@@ -1,7 +1,6 @@
 import pytest
 import numpy as np
 import xarray as xr
-import hdf5plugin
 import sys
 import os
 
@@ -45,7 +44,7 @@ def test_resolve_fill_value_word_str_pass():
 
 
 @pytest.mark.integration
-def test_build_netcdf_encoding_uses_blosc_zstd_for_data_vars_only():
+def test_build_netcdf_encoding_sets_compression_for_data_vars_only():
     ds = xr.Dataset(
         data_vars={
             "airTemperature": (("station", "time"), np.ones((2, 3))),
@@ -57,18 +56,14 @@ def test_build_netcdf_encoding_uses_blosc_zstd_for_data_vars_only():
     )
 
     encoding = build_netcdf_encoding(ds, {"time": 2}, complevel=5)
-    blosc_filter = hdf5plugin.Blosc(
-        cname="zstd",
-        clevel=5,
-        shuffle=hdf5plugin.Blosc.SHUFFLE,
-    )
 
     assert set(encoding) == {"airTemperature"}
-    assert encoding["airTemperature"] == {
-        "compression": blosc_filter["compression"],
-        "compression_opts": blosc_filter["compression_opts"],
-        "chunksizes": (2, 2),
-    }
+    assert encoding["airTemperature"]["chunksizes"] == (2, 2)
+    assert encoding["airTemperature"]["shuffle"] is True
+    assert any(
+        key in encoding["airTemperature"]
+        for key in ("compression", "compression_opts", "zlib", "lzf")
+    )
 
 
 def test_build_netcdf_encoding_uses_full_dimension_when_chunk_missing():

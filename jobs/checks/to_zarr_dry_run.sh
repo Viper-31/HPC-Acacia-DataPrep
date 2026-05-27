@@ -9,12 +9,14 @@
 #SBATCH --output=to_zarr_dry_run_%j.log
 #SBATCH --error=to_zarr_dry_run_%j.err
 
+set -euo pipefail
+
 module load python/3.11.6
 cd $MYSCRATCH
 source zarr_venv/bin/activate
 
 export REPO_ROOT="$MYSCRATCH"
-export PYTHONPATH="$MYSCRATCH/scripts:$PYTHONPATH"
+export PYTHONPATH="$REPO_DIR/scripts${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "Starting to Zarr conversion at $(date)"
 

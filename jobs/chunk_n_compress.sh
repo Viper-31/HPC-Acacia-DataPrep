@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=to_zarr
+#SBATCH --job-name=chunk_n_compress
 #SBATCH --partition=work
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=200G
-#SBATCH --time=02:00:00
-#SBATCH --output=to_zarr_%j.log
-#SBATCH --error=to_zarr_%j.err
+#SBATCH --time=04:00:00
+#SBATCH --output=chunk_compress_%j.log
+#SBATCH --error=chunk_compress_%j.err
 
 set -euo pipefail
 
@@ -16,11 +16,13 @@ REPO_DIR="$MYSCRATCH/HPC-Acacia-DataPrep"
 cd "$REPO_DIR"
 source "$MYSCRATCH/zarr_venv/bin/activate"
 
+export NUM_OF_CORES="24"
+export MEMORY_LIMIT="200GB"
 export REPO_ROOT="$REPO_DIR"
 export PYTHONPATH="$REPO_DIR/scripts${PYTHONPATH:+:$PYTHONPATH}"
 
-echo "Starting to Zarr conversion at $(date)"
+echo "Starting Chunking and Compression at $(date)"
 
-python -u scripts/to_zarr.py
+python -u scripts/chunk_n_compress.py 
 
 echo "Finished at $(date)"

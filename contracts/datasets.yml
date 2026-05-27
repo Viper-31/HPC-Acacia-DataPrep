@@ -4,10 +4,9 @@ datasets:
       chunk_n_compress:
         input_root: "acacia_clean_data"
         input_pattern: "DPIRD/DPIRD_final_stations.nc"
-        output_root: "vz_kerchunk"
-        output_pattern: "DPIRD/dpird_wa_stations.nc"
+        output_root: "kerchunk_webviz"
         chunk_map: { station: 96, time: 52624 }
-        complevel: 5
+        complevel: 9 #Zstd complevel [1-22]. Does not affect decompression speed.
       to_zarr:
         input_root: "acacia_clean_data"
         input_pattern: "DPIRD/DPIRD_final_stations.nc"
@@ -21,21 +20,15 @@ datasets:
     stages:
       chunk_n_compress:
         input_root: "acacia_clean_data"
-        output_root: "vz_kerchunk"
-        years:
-          - year: 2024
-            input_pattern: "ECMWF/2024/**/*.nc"
-            output_pattern: "ECMWF/2024/ecmwf_op.nc"
-          - year: 2025
-            input_pattern: "ECMWF/2025/**/*.nc"
-            output_pattern: "ECMWF/2025/ecmwf_op.nc"
-        chunk_map: { time: 4 }
-        complevel: 5
+        input_pattern: "ECMWF/**/*.nc"
+        output_root: "kerchunk_webviz"
+        chunk_map: { time: 4, step: 113, latitude: 111, longitude: 151 }
+        complevel: 9
       to_zarr:
         input_root: "acacia_clean_data"
         input_pattern: "ECMWF/**/*.nc"
         output_root: "zarr_objects"
-        chunk_map: { time: 6, step: 113, latitude: 111, longitude: 151 }
+        chunk_map: { time: 4, step: 113, latitude: 111, longitude: 151 }
         shard_map: { time: 120, step: 113, latitude: 111, longitude: 151 }
         fill_value: "nan"
         fill_value_dtype: "float32"
