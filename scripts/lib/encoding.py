@@ -2,7 +2,6 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 import xarray as xr
-import hdf5plugin
 
 EncodingMap= dict[str, dict[str, Any]]
 
@@ -27,13 +26,11 @@ def build_netcdf_encoding(
     for var in ds.data_vars:
         var_dims= ds[var].dims
         var_chunks= tuple(chunk_map.get(dim, ds[var].sizes[dim]) for dim in var_dims)
-
-        zstd_params = hdf5plugin.Zstd(clevel=complevel)
-
         enc[var] = {
-            **zstd_params,
-            "shuffle": True,
-            "chunksizes": var_chunks
+            "zlib": True,
+            "complevel": complevel,
+            "chunksizes": var_chunks,
+            "shuffle": True
         }
     return enc
 

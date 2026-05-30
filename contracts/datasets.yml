@@ -6,7 +6,7 @@ datasets:
         input_pattern: "DPIRD/DPIRD_final_stations.nc"
         output_root: "kerchunk_webviz"
         chunk_map: { station: 96, time: 52624 }
-        complevel: 9 #Zstd complevel [1-22]. Does not affect decompression speed.
+        complevel: 7 
       to_zarr:
         input_root: "acacia_clean_data"
         input_pattern: "DPIRD/DPIRD_final_stations.nc"
@@ -22,8 +22,8 @@ datasets:
         input_root: "acacia_clean_data"
         input_pattern: "ECMWF/**/*.nc"
         output_root: "kerchunk_webviz"
-        chunk_map: { time: 4, step: 113, latitude: 111, longitude: 151 }
-        complevel: 9
+        chunk_map: { time: 7, step: 113, latitude: 37, longitude: 151 }
+        complevel: 7
       to_zarr:
         input_root: "acacia_clean_data"
         input_pattern: "ECMWF/**/*.nc"
