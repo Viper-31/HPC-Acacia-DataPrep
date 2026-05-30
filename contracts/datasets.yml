@@ -22,7 +22,7 @@ datasets:
         input_root: "acacia_clean_data"
         input_pattern: "ECMWF/**/*.nc"
         output_root: "kerchunk_webviz"
-        chunk_map: { time: 4, step: 113, latitude: 111, longitude: 151 }
+        chunk_map: { time: 7, step: 113, latitude: 37, longitude: 151 }
         complevel: 7
       to_zarr:
         input_root: "acacia_clean_data"
