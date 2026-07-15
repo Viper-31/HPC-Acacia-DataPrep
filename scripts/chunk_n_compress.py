@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Any
+from typing import Mapping, Any, Literal
 
 import xarray as xr
 from dask.distributed import Client, LocalCluster, as_completed
@@ -16,6 +16,9 @@ STAGES = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Result type
+# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class ProcessResult:
     ok: bool
@@ -24,16 +27,46 @@ class ProcessResult:
     message: str
 
 
+# ---------------------------------------------------------------------------
+# Path resolution
+# ---------------------------------------------------------------------------
 def iter_inputs(spec: Mapping[str, Any]) -> tuple[list[Path], Path]:
     in_root = scratch_path(spec["input_root"])
     files = list(in_root.glob(spec["input_pattern"]))
     return files, in_root
 
 
-def output_path_for(in_path: Path, spec: Mapping[str, Any], in_root: Path) -> Path:
+def build_output_path_per_dataset(
+    in_path: Path, spec: Mapping[str, Any], in_root: Path
+) -> Path:
     out_root = scratch_path(spec["output_root"])
     rel_path = in_path.relative_to(in_root)
     return out_root / rel_path
+
+
+def create_directory_paths(out_paths: list[Path]) -> None:
+    """Create output directories and clean stale temp files"""
+    for out_path in out_paths:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = out_path.with_name(f".{out_path.name}.tmp")
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Dataset preprocessing
+# ---------------------------------------------------------------------------
+
+
+def preprocess_dataset(ds: xr.Dataset, dataset_name: str) -> None:
+    """Apply dataset-specific mutations in-place before chunking."""
+    if dataset_name == "dpird":
+        ds.attrs.clear()  # Strip global attributes (e.g. removes GMT+8 mention)
+
+
+# ---------------------------------------------------------------------------
+# Atomic NetCDF write
+# ---------------------------------------------------------------------------
 
 
 def write_netcdf_atomic(
@@ -41,16 +74,13 @@ def write_netcdf_atomic(
     out_path: Path | str,
     encoding: Mapping[str, Mapping[str, Any]] | None,
     *,
-    engine: str = "h5netcdf",
-    netcdf_format: str = "NETCDF4",
+    engine: Literal["h5netcdf", "netcdf4", "scipy"] = "h5netcdf",
+    netcdf_format: Literal[
+        "NETCDF4", "NETCDF4_CLASSIC", "NETCDF3_64BIT", "NETCDF3_CLASSIC"
+    ] = "NETCDF4",
 ) -> Path:
     final_path = Path(out_path)
     tmp_path = final_path.with_name(f".{final_path.name}.tmp")
-    final_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Clear artefacts from old (failed) runs
-    if tmp_path.exists():
-        tmp_path.unlink()
 
     try:
         write_task = ds.to_netcdf(
@@ -69,25 +99,25 @@ def write_netcdf_atomic(
             f"Failed writing NetCDF artifact {final_path}: {exc}"
         ) from exc
 
-    # If to_netcdf() suceeeds with no Exception, return final path to print Sucess
+    # If to_netcdf() suceeds with no Exception, return final path to print Success
     tmp_path.replace(final_path)
     return final_path
 
 
+# ---------------------------------------------------------------------------
+# Per-file chunking and writing (1 worker = 1 file)
+# ---------------------------------------------------------------------------
 def process_file(
     in_path: Path, spec: Mapping[str, Any], in_root: Path, dataset_name: str
 ) -> ProcessResult:
-    out_path = output_path_for(in_path, spec, in_root)
+    out_path = build_output_path_per_dataset(in_path, spec, in_root)
 
     try:
         with xr.open_dataset(in_path, engine="h5netcdf") as ds:
-            if dataset_name == "dpird":
-                # Strip global dataset attribute from dprid ds. Removes GMT+8 mention
-                ds.attrs.clear()
-
+            preprocess_dataset(ds, dataset_name)
             ds = ds.chunk(spec["chunk_map"])
             encoding = build_netcdf_encoding(
-                ds, spec["chunk_map"], complevel=spec["complevel"]
+                ds, chunk_map=spec["chunk_map"], complevel=spec["complevel"]
             )
             write_netcdf_atomic(ds, out_path, encoding=encoding)
 
@@ -97,7 +127,6 @@ def process_file(
             out_path=out_path,
             message=f"Completed: {in_path} -> {out_path}",
         )
-
     except Exception as exc:
         return ProcessResult(
             ok=False,
@@ -107,6 +136,9 @@ def process_file(
         )
 
 
+# ---------------------------------------------------------------------------
+# Cluster configuration
+# ---------------------------------------------------------------------------
 def _runtime_cluster_config() -> tuple[int, str]:
     workers_raw = (
         os.getenv("NUM_OF_CORES")
@@ -119,7 +151,6 @@ def _runtime_cluster_config() -> tuple[int, str]:
         )
 
     workers = int(workers_raw)
-    # Prefer explicit MEMORY_LIMIT in GB (e.g. "160GB")
     mem_limit_raw = os.getenv("MEMORY_LIMIT")
     if mem_limit_raw:
         mem_limit_raw = mem_limit_raw.strip().upper()
@@ -145,17 +176,12 @@ def _runtime_cluster_config() -> tuple[int, str]:
     return workers, f"{mem_per_worker_gb:.2f}GB"
 
 
-def main() -> None:
-    workers, mem_limit = _runtime_cluster_config()
-    print(
-        f"Resolved runtime config: workers={workers}, "
-        f"memory_limit_per_worker={mem_limit}",
-        flush=True,
-    )
+# ---------------------------------------------------------------------------
+# Orchestration
+# ---------------------------------------------------------------------------
 
-    # process=True starts seperate worker processes, increasing Dask client startup time (~15 mins)
-    # Each worker must load its own Python environment + packages. Such that independent HDF read/write are independent
-    # They do not share memory, unlike threads (process=False) so 1 fail write will not take down all processes
+
+def _start_cluster(workers: int, mem_limit: str) -> tuple[Client, LocalCluster]:
     print("Starting Dask LocalCluster...", flush=True)
     cluster = LocalCluster(
         n_workers=workers,
@@ -164,69 +190,107 @@ def main() -> None:
         memory_limit=mem_limit,
         dashboard_address=":8787",
     )
-
     print("Connecting Dask Client ...", flush=True)
     client = Client(cluster)
-
     print(
-        f"workers={workers}, memory_limit_per_worker={mem_limit}, dashboard={client.dashboard_link}"
+        f"workers={workers}, memory_limit_per_worker={mem_limit}, "
+        f"dashboard={client.dashboard_link}"
+    )
+    return client, cluster
+
+
+def _prepare_paths() -> tuple[
+    list[Path], list[Mapping[str, Any]], list[Path], list[str]
+]:
+    """Discover input files and pre-create all output directories.
+
+    Returns four parallel lists for ``client.map(process_file, ...)``.
+    Raises :exc:`SystemExit` (code 0) when no files are found.
+    """
+    all_files: list[Path] = []
+    all_specs: list[Mapping[str, Any]] = []
+    all_roots: list[Path] = []
+    all_dataset_names: list[str] = []
+
+    out_paths: list[Path] = []
+
+    for dataset_name, spec in STAGES.items():
+        files, in_root = iter_inputs(spec)
+        for file_path in files:
+            all_files.append(file_path)
+            all_specs.append(spec)
+            all_roots.append(in_root)
+            all_dataset_names.append(dataset_name)
+
+            out_path = build_output_path_per_dataset(file_path, spec, in_root)
+            if out_path.exists():
+                continue # Skip already-processed files on re-run
+            out_paths.append(out_path)
+
+    if not all_files:
+        print(
+            "No files found to process. Check staged inputs in "
+            "$MYSCRATCH/acacia_clean_data"
+        )
+        raise SystemExit(0)
+
+    # Pre-create all output directories and clean stale temps BEFORE any Dask worker starts
+    create_directory_paths(out_paths)
+
+    return all_files, all_specs, all_roots, all_dataset_names
+
+
+# ---------------------------------------------------------------------------
+# Task execution (fail-fast loop)
+# ---------------------------------------------------------------------------
+
+
+def _execute_tasks(
+    client: Client,
+    all_files: list[Path],
+    all_specs: list[Mapping[str, Any]],
+    all_roots: list[Path],
+    all_dataset_names: list[str],
+) -> None:
+    """Submit one task per file, fail-fast on any error.
+
+    Raises :exc:`SystemExit` (code 1) if any task fails.
+    """
+    print(
+        f"Submitting {len(all_files)} tasks across "
+        f"{len(client.scheduler_info()['workers'])} workers on cluster ..."
     )
 
+    futures = client.map(
+        process_file, all_files, all_specs, all_roots, all_dataset_names
+    )
+    pending = set(futures)
+
+    for future in as_completed(futures):
+        pending.discard(future)
+
+        try:
+            result = future.result()
+        except Exception as exc:
+            print(f"Task failed before returning a result: {exc}")
+            client.cancel(list(pending), force=True)
+            raise SystemExit(1) from exc
+
+        print(result.message)
+
+        if not result.ok:
+            client.cancel(list(pending), force=True)
+            raise SystemExit(1)
+
+
+def main() -> None:
+    workers, mem_limit = _runtime_cluster_config()
+    client, cluster = _start_cluster(workers, mem_limit)
+
     try:
-        all_files: list[Path] = []
-        all_specs: list[Mapping[str, Any]] = []
-        all_roots: list[Path] = []
-        all_dataset_names: list[str] = []
-
-        for dataset_name, spec in STAGES.items():
-            files, in_root = iter_inputs(spec)
-            for file_path in files:
-                # Do not have workers race to mkdir
-                out_path = output_path_for(file_path, spec, in_root)
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-
-                all_files.append(file_path)
-                all_specs.append(spec)
-                all_roots.append(in_root)
-                all_dataset_names.append(dataset_name)
-
-        if not all_files:
-            print(
-                "No files found to process. Check staged inputs in $MYSCRATCH/acacia_clean_data"
-            )
-            return
-
-        print(
-            f"Submitting {len(all_files)} tasks across "
-            f"{len(client.scheduler_info()['workers'])} workers on cluster ..."
-        )
-
-        futures = client.map(
-            process_file, all_files, all_specs, all_roots, all_dataset_names
-        )
-        pending = set(futures)
-
-        for future in as_completed(futures):
-            pending.discard(future)
-
-            try:
-                result = future.result()
-            except Exception as exc:
-                print(f"Task failed before returning a result: {exc}")
-                client.cancel(list(pending), force=True)
-                raise SystemExit(1) from exc
-
-            print(result.message)
-
-            # Fail fast on all future jobs for any error.
-            if not result.ok:
-                client.cancel(list(pending), force=True)
-                raise SystemExit(1)
-
+        all_files, all_specs, all_roots, all_dataset_names = _prepare_paths()
+        _execute_tasks(client, all_files, all_specs, all_roots, all_dataset_names)
+        print(f"All {len(all_files)} files committed.", flush=True)
     finally:
         client.close()
         cluster.close()
-
-
-if __name__ == "__main__":
-    main()
