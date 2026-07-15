@@ -126,22 +126,35 @@ def test_process_file_clears_dpird_attrs_and_writes_atomic(tmp_path, monkeypatch
     assert calls["write_atomic"] == (fake_ds, result.out_path, {"encoded": {}})
 
 
-def test_process_file_keeps_ecmwf_attrs_and_writes_input_relative_output(tmp_path, monkeypatch):
+def test_process_file_keeps_ecmwf_attrs_and_writes_input_relative_output(
+    tmp_path, monkeypatch
+):
     module = _import_chunk_n_compress(tmp_path, monkeypatch)
     input_root = tmp_path / "acacia_clean_data"
     in_path = input_root / "ECMWF/2024/02/06.nc"
     fake_ds = FakeDataset()
 
     monkeypatch.setattr(module.xr, "open_dataset", lambda path, engine: fake_ds)
-    monkeypatch.setattr(module, "build_netcdf_encoding", lambda ds, chunk_map, complevel: {"encoded": {}})
-    monkeypatch.setattr(module, "write_netcdf_atomic", lambda ds, out_path, encoding: out_path)
+    monkeypatch.setattr(
+        module,
+        "build_netcdf_encoding",
+        lambda ds, chunk_map, complevel: {"encoded": {}},
+    )
+    monkeypatch.setattr(
+        module, "write_netcdf_atomic", lambda ds, out_path, encoding: out_path
+    )
 
     result = module.process_file(in_path, module.STAGES["ecmwf"], input_root, "ecmwf")
 
     assert result.ok is True
     assert result.out_path == tmp_path / "vz_kerchunk/ECMWF/2024/02/06.nc"
     assert fake_ds.attrs == {"source": "keep-or-clear"}
-    assert fake_ds.chunk_map == {"time": 4, "step": 113, "latitude": 111, "longitude": 151}
+    assert fake_ds.chunk_map == {
+        "time": 4,
+        "step": 113,
+        "latitude": 111,
+        "longitude": 151,
+    }
 
 
 def test_process_file_returns_failure_result_without_raising(tmp_path, monkeypatch):
@@ -163,7 +176,9 @@ def test_process_file_returns_failure_result_without_raising(tmp_path, monkeypat
 
 
 @pytest.mark.integration
-def test_write_netcdf_atomic_replaces_existing_output_after_success(tmp_path, monkeypatch):
+def test_write_netcdf_atomic_replaces_existing_output_after_success(
+    tmp_path, monkeypatch
+):
     module = _import_chunk_n_compress(tmp_path, monkeypatch)
     ds = xr.Dataset({"t2m": ("time", np.array([1.0, 2.0]))})
     out_path = tmp_path / "ECMWF/2024/02/06.nc"
@@ -207,6 +222,7 @@ def test_write_netcdf_atomic_removes_stale_temp_before_writing(tmp_path, monkeyp
     assert out_path.read_text(encoding="utf-8") == "new complete output"
     assert not tmp_path_nc.exists()
 
+
 @pytest.mark.integration
 def test_write_netcdf_atomic_removes_temp_and_keeps_existing_output_on_failure(
     tmp_path,
@@ -231,7 +247,9 @@ def test_write_netcdf_atomic_removes_temp_and_keeps_existing_output_on_failure(
     assert not (out_path.parent / ".06.nc.tmp").exists()
 
 
-def test_main_submits_all_files_with_client_map_and_closes_cluster(tmp_path, monkeypatch):
+def test_main_submits_all_files_with_client_map_and_closes_cluster(
+    tmp_path, monkeypatch
+):
     module = _import_chunk_n_compress(tmp_path, monkeypatch)
     input_root = tmp_path / "acacia_clean_data"
     dpird_file = input_root / "DPIRD/DPIRD_final_stations.nc"
@@ -285,15 +303,24 @@ def test_main_submits_all_files_with_client_map_and_closes_cluster(tmp_path, mon
     module.main()
 
     assert calls == [
-        ("cluster", {
-            "n_workers": 2,
-            "threads_per_worker": 1,
-            "processes": True,
-            "memory_limit": "100.00GB",
-            "dashboard_address": ":8787",
-        }),
+        (
+            "cluster",
+            {
+                "n_workers": 2,
+                "threads_per_worker": 1,
+                "processes": True,
+                "memory_limit": "100.00GB",
+                "dashboard_address": ":8787",
+            },
+        ),
         ("client", "FakeCluster"),
-        ("map", [dpird_file, ecmwf_file], [module.STAGES["dpird"], module.STAGES["ecmwf"]], [input_root, input_root], ["dpird", "ecmwf"]),
+        (
+            "map",
+            [dpird_file, ecmwf_file],
+            [module.STAGES["dpird"], module.STAGES["ecmwf"]],
+            [input_root, input_root],
+            ["dpird", "ecmwf"],
+        ),
         ("future_result", "dpird ok"),
         ("future_result", "ecmwf ok"),
         "client_close",
@@ -337,7 +364,9 @@ def test_main_fails_fast(tmp_path, monkeypatch):
             ]
 
         def cancel(self, futures, force):
-            calls.append(("cancel", [future._result.message for future in futures], force))
+            calls.append(
+                ("cancel", [future._result.message for future in futures], force)
+            )
 
         def close(self):
             calls.append("client_close")
@@ -346,13 +375,20 @@ def test_main_fails_fast(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "Client", FakeClient)
     monkeypatch.setattr(module, "as_completed", lambda futures: futures, raising=False)
     monkeypatch.setattr(module, "_runtime_cluster_config", lambda: (1, "100.00GB"))
-    monkeypatch.setattr(module, "iter_inputs", lambda spec: ([input_root / "file.nc"], input_root))
+    monkeypatch.setattr(
+        module, "iter_inputs", lambda spec: ([input_root / "file.nc"], input_root)
+    )
 
     with pytest.raises(SystemExit) as exc_info:
         module.main()
 
     assert exc_info.value.code == 1
-    assert calls == ["first failed", ("cancel", ["second succeeded"], True), "client_close", "cluster_close"]
+    assert calls == [
+        "first failed",
+        ("cancel", ["second succeeded"], True),
+        "client_close",
+        "cluster_close",
+    ]
 
 
 def test_main_returns_without_error_when_no_files_found(tmp_path, monkeypatch):
@@ -378,7 +414,9 @@ def test_main_returns_without_error_when_no_files_found(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "LocalCluster", FakeCluster)
     monkeypatch.setattr(module, "Client", FakeClient)
     monkeypatch.setattr(module, "_runtime_cluster_config", lambda: (1, "100.00GB"))
-    monkeypatch.setattr(module, "iter_inputs", lambda spec: ([], tmp_path / "acacia_clean_data"))
+    monkeypatch.setattr(
+        module, "iter_inputs", lambda spec: ([], tmp_path / "acacia_clean_data")
+    )
 
     module.main()
 
