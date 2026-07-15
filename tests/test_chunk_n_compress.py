@@ -2,7 +2,6 @@ import importlib
 import os
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -272,6 +271,7 @@ def test_runtime_cluster_config_raises_when_memory_missing(tmp_path, monkeypatch
 
     with pytest.raises(RuntimeError, match="Set MEMORY_LIMIT"):
         module._runtime_cluster_config()
+
 
 # ---------------------------------------------------------------------------
 # Integration write_netcdf_atomic — real xarray I/O
