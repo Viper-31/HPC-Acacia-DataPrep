@@ -5,37 +5,44 @@ import sys
 import os
 
 # Adjust import path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from scripts.lib.encoding import build_netcdf_encoding, resolve_fill_value
+
 
 def test_resolve_fill_value_nan_float32():
     val = resolve_fill_value("nan", "float32")
     assert type(val) == np.float32
     assert np.isnan(val)
 
+
 def test_resolve_fill_value_nan_float64():
     val = resolve_fill_value(np.nan, "float64")
     assert type(val) == np.float64
     assert np.isnan(val)
+
 
 def test_resolve_fill_value_0_str_pass():
     val = resolve_fill_value("0", "str")
     assert isinstance(val, (str, np.str_))
     assert val == "0"
 
+
 def test_resolve_fill_value_int_pass():
     val = resolve_fill_value(0, "int")
     assert np.issubdtype(type(val), np.integer)
     assert val == 0
 
+
 def test_resolve_fill_value_int_to_str_fails():
     with pytest.raises((TypeError, ValueError)):
         resolve_fill_value(0, "str")
 
+
 def test_resolve_fill_value_float_pass():
-    val = resolve_fill_value(9.969209968386869e+36, "float64")
+    val = resolve_fill_value(9.969209968386869e36, "float64")
     assert np.issubdtype(type(val), np.floating)
-    assert np.isclose(val, 9.969209968386869e+36)
+    assert np.isclose(val, 9.969209968386869e36)
+
 
 def test_resolve_fill_value_word_str_pass():
     val = resolve_fill_value("Amongus", "str")
@@ -114,10 +121,13 @@ def test_build_zarr_encoding_applies_chunks_shards_and_fill_value_to_data_vars_o
 def test_build_zarr_encoding_empty_dataset_returns_empty_mapping():
     from scripts.lib.encoding import build_zarr_encoding
 
-    assert build_zarr_encoding(
-        xr.Dataset(),
-        chunk_map={"time": 1},
-        shard_map={"time": 2},
-        fill_value=None,
-        compressors=[],
-    ) == {}
+    assert (
+        build_zarr_encoding(
+            xr.Dataset(),
+            chunk_map={"time": 1},
+            shard_map={"time": 2},
+            fill_value=None,
+            compressors=[],
+        )
+        == {}
+    )
