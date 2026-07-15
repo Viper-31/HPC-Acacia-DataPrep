@@ -224,7 +224,7 @@ def _prepare_paths() -> tuple[
 
             out_path = build_output_path_per_dataset(file_path, spec, in_root)
             if out_path.exists():
-                continue # Skip already-processed files on re-run
+                continue  # Skip already-processed files on re-run
             out_paths.append(out_path)
 
     if not all_files:
