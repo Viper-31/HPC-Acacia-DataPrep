@@ -13,7 +13,7 @@ set -euo pipefail
 
 module load python/3.11.6
 cd $MYSCRATCH
-source zarr_venv/bin/activate
+source "$UV_PROJECT_ENVIRONMENT/bin/activate"
 
 export REPO_ROOT="$MYSCRATCH"
 export PYTHONPATH="$REPO_DIR/scripts${PYTHONPATH:+:$PYTHONPATH}"
