@@ -9,33 +9,39 @@ jobs` and `$MYSCRATCH/scripts`.
 
 ## Execution Order
 
-1. **Stage in (copy raw data into scratch)**
+1. Stage in (copy raw data into scratch)
 
 ```bash
 sbatch jobs/stage_in.sh
-
+```
 Writes: $MYSCRATCH/acacia_clean_data/DPIRD and $MYSCRATCH/acacia_clean_data/ECMWF
 
 2. Chunk + compress NetCDF
+```bash
 sbatch jobs/chunk_n_compress_dpird.sh
 sbatch jobs/chunk_n_compress_ecmwf_array.sh
+```
 Writes: $MYSCRATCH/vz_kerchunk/...
 
 3. Convert to Zarr
-sbatch jobs/to_zarr.sh
+
+```bash
 (Dry run)
 sbatch jobs/to_zarr_dry_run.sh
+sbatch jobs/to_zarr.sh
+```
 Writes: $MYSCRATCH/zarr_objects/...
 
-Note: DPIRD Zarr reads from $MYSCRATCH/vz_kerchunk/DPIRD/...
+4. Stage-out to acacia
+```bash
+sbatch jobs/stage_out.sh
+```
+Note: stage-out targets $MYSCRATCH/vz_kerchunk (not Zarr output).
+
+**Note**: DPIRD Zarr reads from $MYSCRATCH/vz_kerchunk/DPIRD/...
 while ECMWF Zarr reads from $MYSCRATCH/acacia_clean_data/ECMWF/...
 
-4. Optional checks
-sbatch jobs/checks/check_enc_zarr.sh
-(or run manually)
-python -u scripts/checks/check_enc_zarr.py
-
-5. Stage-out to acacia (copy chunked NetCDF back to ObjectStore)
-sbatch jobs/stage_out.sh
-Note: stage-out targets $MYSCRATCH/vz_kerchunk (not Zarr output).
-```
+Optional checks
+`sbatch jobs/checks/check_enc_zarr.sh`
+Or run manually:
+`python -u scripts/checks/check_enc_zarr.py`
