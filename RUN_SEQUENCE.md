@@ -4,7 +4,6 @@
 
 - Repository is staged under `$MYSCRATCH` so that `jobs/` and `scripts/` are directly available at `$MYSCRATCH/
 jobs` and `$MYSCRATCH/scripts`.
-- Required modules/venv match the job scripts (e.g., `python/3.11.6`, `zarr_venv`).
 - `rclone` is configured for the Pawsey remote used in the stage-in/out scripts.
 
 ## Execution Order

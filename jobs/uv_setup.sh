@@ -15,3 +15,4 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$(dirname "$SCRIPT_DIR")" || exit 1
 
 uv sync --no-dev
+source "$UV_PROJECT_ENVIRONMENT/bin/activate"

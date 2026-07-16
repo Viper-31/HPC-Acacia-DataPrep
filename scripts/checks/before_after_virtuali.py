@@ -1,4 +1,4 @@
-# Activate zarr_venv then use python -u scripts/checks/before_after_virtuali.py
+# Activate venv using `source "$UV_PROJECT_ENVIRONMENT/bin/activate"`
 #!/usr/bin/env python3
 import os
 from pathlib import Path
