@@ -8,22 +8,31 @@ jobs` and `$MYSCRATCH/scripts`.
 - `rclone` is configured for the Pawsey remote used in the stage-in/out scripts.
 
 ## Execution Order
+1. Clone repo to $MYSCRATCH and prepare uv .venv in $MYSOFTWARE
+```bash
+cd $MYSCRATCH
+git clone
+sbatch HPC-Acacia-DataPrep/jobs/uv_setup.sh
+```
 
-1. Stage in (copy raw data into scratch)
+The .venv lives on /software and survives scratch purges.
+Re-run uv_setup.sh only after pulling dependency changes.
+
+2. Stage in (copy raw data into scratch)
 
 ```bash
 sbatch jobs/stage_in.sh
 ```
 Writes: $MYSCRATCH/acacia_clean_data/DPIRD and $MYSCRATCH/acacia_clean_data/ECMWF
 
-2. Chunk + compress NetCDF
+3. Chunk + compress NetCDF
 ```bash
 sbatch jobs/chunk_n_compress_dpird.sh
 sbatch jobs/chunk_n_compress_ecmwf_array.sh
 ```
 Writes: $MYSCRATCH/vz_kerchunk/...
 
-3. Convert to Zarr
+4. Convert to Zarr
 
 ```bash
 (Dry run)
@@ -32,7 +41,7 @@ sbatch jobs/to_zarr.sh
 ```
 Writes: $MYSCRATCH/zarr_objects/...
 
-4. Stage-out to acacia
+5. Stage-out to acacia
 ```bash
 sbatch jobs/stage_out.sh
 ```
