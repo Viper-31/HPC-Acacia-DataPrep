@@ -294,3 +294,7 @@ def main() -> None:
     finally:
         client.close()
         cluster.close()
+
+
+if __name__ == "__main__":
+    main()
