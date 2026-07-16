@@ -25,6 +25,7 @@ dev = [
     "nbstripout>=0.9.1",
     "netcdf4>=1.7.4",
     "pytest-cov>=7.1.0",
+    "ruff>=0.15.21",
 ]
 
 [tool.pytest.ini_options]

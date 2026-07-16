@@ -6,15 +6,16 @@
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=200G
 #SBATCH --time=08:00:00
-#SBATCH --output=chunk_compress_%j.log
-#SBATCH --error=chunk_compress_%j.err
+#SBATCH --output=logs/chunk_compress_%j.log
+#SBATCH --error=logs/chunk_compress_%j.err
 
 set -euo pipefail
 
 module load python/3.11.6
 REPO_DIR="$MYSCRATCH/HPC-Acacia-DataPrep"
 cd "$REPO_DIR"
-source "$MYSCRATCH/zarr_venv/bin/activate"
+export UV_PROJECT_ENVIRONMENT="$MYSOFTWARE/.venvs/hpc-acacia-dataprep/.venv"
+source "$UV_PROJECT_ENVIRONMENT/bin/activate"
 
 export NUM_OF_CORES="24"
 export MEMORY_LIMIT="200GB"

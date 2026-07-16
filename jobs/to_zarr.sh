@@ -14,7 +14,8 @@ set -euo pipefail
 module load python/3.11.6
 REPO_DIR="$MYSCRATCH/HPC-Acacia-DataPrep"
 cd "$REPO_DIR"
-source "$MYSCRATCH/zarr_venv/bin/activate"
+export UV_PROJECT_ENVIRONMENT="$MYSOFTWARE/.venvs/hpc-acacia-dataprep/.venv"
+source "$UV_PROJECT_ENVIRONMENT/bin/activate"
 
 export REPO_ROOT="$REPO_DIR"
 export PYTHONPATH="$REPO_DIR/scripts${PYTHONPATH:+:$PYTHONPATH}"
