@@ -13,6 +13,7 @@ module load python/3.11.6
 cd $MYSCRATCH
 
 # Activate the same virtual environment used for to_zarr.sh
+export UV_PROJECT_ENVIRONMENT="$MYSOFTWARE/.venvs/hpc-acacia-dataprep/.venv"
 source "$UV_PROJECT_ENVIRONMENT/bin/activate"
 
 echo "Starting Encoding Check at $(date)"
