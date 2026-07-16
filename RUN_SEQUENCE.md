@@ -26,10 +26,9 @@ Writes: $MYSCRATCH/acacia_clean_data/DPIRD and $MYSCRATCH/acacia_clean_data/ECMW
 
 3. Chunk + compress NetCDF
 ```bash
-sbatch jobs/chunk_n_compress_dpird.sh
-sbatch jobs/chunk_n_compress_ecmwf_array.sh
+sbatch jobs/chunk_n_compress.sh
 ```
-Writes: $MYSCRATCH/vz_kerchunk/...
+Writes to: `$MYSCRATCH/${output_root}/...`
 
 4. Convert to Zarr
 
@@ -40,14 +39,15 @@ sbatch jobs/to_zarr.sh
 ```
 Writes: $MYSCRATCH/zarr_objects/...
 
-5. Stage-out to acacia
+5. a. Stage-out to weather (project) bucket
 ```bash
-sbatch jobs/stage_out.sh
+sbatch jobs/stage_out_weather.sh
 ```
-Note: stage-out targets $MYSCRATCH/vz_kerchunk (not Zarr output).
+Note: stage-out targets $MYSCRATCH/${output_root} (not Zarr output).
 
-**Note**: DPIRD Zarr reads from $MYSCRATCH/vz_kerchunk/DPIRD/...
-while ECMWF Zarr reads from $MYSCRATCH/acacia_clean_data/ECMWF/...
+5. b. Stage out to jchew bucket
+Follow interactive mode in [jobs/stage_out_webviz.sh]()
+
 
 Optional checks
 `sbatch jobs/checks/check_enc_zarr.sh`

@@ -13,6 +13,8 @@ set -euo pipefail
 
 module load python/3.11.6
 cd $MYSCRATCH
+
+export UV_PROJECT_ENVIRONMENT="$MYSOFTWARE/.venvs/hpc-acacia-dataprep/.venv"
 source "$UV_PROJECT_ENVIRONMENT/bin/activate"
 
 export REPO_ROOT="$MYSCRATCH"
