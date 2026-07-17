@@ -7,7 +7,7 @@ import xarray as xr
 
 MYSCRATCH = Path(os.environ.get("MYSCRATCH", "."))
 original_path = MYSCRATCH / "acacia_clean_data/ECMWF/2024/02/06.nc"
-after_chunk_compress_path = MYSCRATCH / "vz_kerchunk/ECMWF/2024/02/06.nc"
+after_chunk_compress_path = MYSCRATCH / "kerchunk_webviz/ECMWF/2024/02/06.nc"
 
 
 def chunk_info_mb(da):
