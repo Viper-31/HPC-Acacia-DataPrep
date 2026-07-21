@@ -5,8 +5,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=8G
-#SBATCH --output=data_out_%j.log
-#SBATCH --error=data_out_%j.err
+#SBATCH --output=logs/data_out_%j.log
+#SBATCH --error=logs/data_out_%j.err
 
 module load rclone/1.68.1
 

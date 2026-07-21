@@ -164,7 +164,12 @@ def test_ecmwf_to_zarr_opens_mfdataset_chunks_and_writes_zarr(tmp_path, monkeypa
             "engine": "h5netcdf",
         },
     )
-    assert fake_ds.chunk_map == {"time": 120, "step": 113, "latitude": 111, "longitude": 151}
+    assert fake_ds.chunk_map == {
+        "time": 120,
+        "step": 113,
+        "latitude": 111,
+        "longitude": 151,
+    }
     assert calls["resolve_fill_value"] == ("nan", "float32")
     assert calls["build_encoding"] == (
         fake_ds,
@@ -196,8 +201,12 @@ def test_main_runs_dpird_then_ecmwf_with_dry_run_flag(tmp_path, monkeypatch):
     calls = []
 
     monkeypatch.setattr(module, "parse_args", lambda: SimpleNamespace(dry_run=True))
-    monkeypatch.setattr(module, "dpird_to_zarr", lambda dry_run: calls.append(("dpird", dry_run)))
-    monkeypatch.setattr(module, "ecmwf_to_zarr", lambda dry_run: calls.append(("ecmwf", dry_run)))
+    monkeypatch.setattr(
+        module, "dpird_to_zarr", lambda dry_run: calls.append(("dpird", dry_run))
+    )
+    monkeypatch.setattr(
+        module, "ecmwf_to_zarr", lambda dry_run: calls.append(("ecmwf", dry_run))
+    )
 
     module.main()
 
